@@ -97,6 +97,7 @@ extern const UINT FileTransferSendPacketMessage;
 #define TIGHT_ZLIB_BUFFER_SIZE 512 // Tight encoding
 class ClientConnection;
 class CDSMPlugin;
+class ViewerExtChannel;
 typedef void (ClientConnection:: *tightFilterFunc)(int);
 
 void JpegErrorHeader(j_common_ptr cinfo);
@@ -505,6 +506,11 @@ private:
 	// Modif sf@2002 - File Transfer
 	friend class FileTransfer;  
 	friend class TextChat;  
+	friend class ViewerExtChannel;
+
+	// Extension message channel (rfbExtMsg). Created in Init(), reset for
+	// every (re)connection, never null.
+	std::unique_ptr<ViewerExtChannel> m_ext;
 	friend struct TLSPlugin;
 
 	// Modif sf@2002 - Server Scaling

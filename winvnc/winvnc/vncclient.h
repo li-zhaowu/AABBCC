@@ -24,6 +24,7 @@
 
 class DesktopUsersToken;
 class vncClient;
+class vncServerExtChannel;
 typedef SHORT vncClientId;
 
 #if (!defined(_WINVNC_VNCCLIENT))
@@ -56,6 +57,8 @@ typedef std::list<vncClientId> vncClientList;
 //#include "timer.h"
 // adzm - 2010-07 - Extended clipboard
 #include "common/Clipboard.h"
+#include <cstdint>
+#include <memory>
 
 #include "MouseSimulator.h"
 
@@ -140,6 +143,7 @@ public:
 	// Allow the client thread to see inside the client object
 	friend class vncClientThread;
 	friend class vncClientUpdateThread;
+	friend class vncServerExtChannel;
 
 	// Init
 	virtual BOOL Init(vncServer *server, VSocket *socket, BOOL auth, BOOL shared, vncClientId newid);
@@ -347,6 +351,11 @@ public:
 	void NotifyExtendedClipboardSupport();
 	// adzm 2010-09 - Notify streaming DSM plugin support
 	void NotifyPluginStreamingSupport();
+	// Extension message channel (rfbExtMsg). Created in the constructor and
+	// destroyed with the client, so it is never null. Other threads may send
+	// on a channel once ExtChannelUsable() reports it negotiated.
+	vncServerExtChannel* ExtChannel();
+	bool ExtChannelUsable(uint8_t channel) const;
 	bool cl_connected;
 	int filetransferrequestPart2(int nDirZipRet);
 	char m_szSrcFileName[MAX_PATH * 4]; // Path + timestring
@@ -637,6 +646,8 @@ protected:
 	bool		m_session_supported;
 	bool		m_initial_update;
 	bool		m_outgoing;
+
+	std::unique_ptr<vncServerExtChannel> m_extChannel;
 };
 
 

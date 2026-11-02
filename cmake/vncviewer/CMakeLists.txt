@@ -21,6 +21,7 @@ set(${PROJECT_NAME}_SOURCES
     ../DSMPlugin/DSMPlugin.cpp
     ../common/ZipUnzip/MiniZipNG.cpp
     ../common/Clipboard.cpp
+    ../common/ExtChannel.cpp
     ../common/Hyperlinks.cpp
     ../common/UltraVncZ.cpp
     ../common/mnemonic.c
@@ -35,6 +36,7 @@ set(${PROJECT_NAME}_SOURCES
     ClientConnection.cpp
     ClientConnectionCacheRect.cpp
     ClientConnectionClipboard.cpp
+    ClientConnectionExt.cpp
     ClientConnectionCoRRE.cpp
     ClientConnectionCopyRect.cpp
     ClientConnectionCursor.cpp

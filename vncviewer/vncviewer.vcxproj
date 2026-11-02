@@ -1755,6 +1755,8 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='RelIPv6|x64'">_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <ClCompile Include="..\common\Clipboard.cpp" />
+    <ClCompile Include="..\common\ExtChannel.cpp" />
+    <ClCompile Include="ClientConnectionExt.cpp" />
     <ClCompile Include="Daemon.cpp">
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -2385,6 +2387,8 @@
     <ClInclude Include="ClientConnection.h" />
     <ClInclude Include="CredentialManager.h" />
     <ClInclude Include="..\common\Clipboard.h" />
+    <ClInclude Include="..\common\ExtChannel.h" />
+    <ClInclude Include="ClientConnectionExt.h" />
     <ClInclude Include="Daemon.h" />
     <ClInclude Include="..\rfb\dh.h" />
     <ClInclude Include="..\rfb\HighResolutionWheel.h" />

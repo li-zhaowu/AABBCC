@@ -22,6 +22,7 @@ set(${PROJECT_NAME}_SOURCES
     ../../DSMPlugin/DSMPlugin.cpp
     ../../common/ZipUnzip/MiniZipNG.cpp
     ../../common/Clipboard.cpp
+    ../../common/ExtChannel.cpp
     ../../common/Hyperlinks.cpp
     ../../common/UltraVncZ.cpp
     ../../common/d3des.c
@@ -75,6 +76,7 @@ set(${PROJECT_NAME}_SOURCES
     vncauth.c
     vncbuffer.cpp
     vncclient.cpp
+    vncExtChannel.cpp
     vncconndialog.cpp
     vncdesktop.cpp
     vncdesktopsink.cpp

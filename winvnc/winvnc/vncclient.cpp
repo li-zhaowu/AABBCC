@@ -266,6 +266,7 @@ bool replaceFile(const char* src, const char* dst)
 	return status;
 }
 #include "Localization.h" // Act : add localization on messages
+#include "vncExtChannel.h"
 typedef BOOL(WINAPI* PGETDISKFREESPACEEX)(LPCSTR, PULARGE_INTEGER, PULARGE_INTEGER, PULARGE_INTEGER);
 
 // vncClient update thread class
@@ -3058,6 +3059,14 @@ vncClientThread::run(void* arg)
 						continue;
 					}
 
+					// Extension message channel: the viewer understands rfbExtMsg.
+					// Opening queues our Caps; the viewer answers with its own.
+					if (Swap32IfLE(encoding) == rfbEncodingExtCaps) {
+						m_client->m_extChannel->Open();
+						vnclog.Print(LL_INTINFO, VNCLOG("Extension channel protocol extension enabled\n"));
+						continue;
+					}
+
 					// adzm - 2010-07 - Extended clipboard
 					if (Swap32IfLE(encoding) == rfbEncodingExtendedClipboard) {
 						need_notify_extended_clipboard = true;
@@ -5016,6 +5025,12 @@ vncClientThread::run(void* arg)
 		}
 		break;
 
+		// Extension message channel (file clipboard, window, audio, video)
+		case rfbExtMsg:
+			if (!m_client->m_extChannel->ReadAndDispatch(m_socket, nTO))
+				m_client->cl_connected = FALSE;
+			break;
+
 		// adzm 2010-09 - Notify streaming DSM plugin support
 		case rfbNotifyPluginStreaming:
 			if (sz_rfbNotifyPluginStreamingMsg > 1)
@@ -5104,6 +5119,10 @@ vncClientThread::run(void* arg)
 	// is not accessing the desktop and buffer objects
 	// DEADLOCK ON EXIT SLow systems... IS this realy needed
 	//m_client->DisableProtocol();
+
+	// Stop the extension channel sender before the update thread goes away;
+	// it sends under the update lock.
+	m_client->m_extChannel->Shutdown();
 
 	// Finally, it's safe to kill the update thread here
 	if (m_client->m_updatethread) {
@@ -5262,6 +5281,8 @@ vncClient::vncClient() : m_clipboard(ClipboardSettings::defaultServerCaps), Send
 	m_hostPort = 0;
 	m_want_update_state = false;
 	m_initial_update = false;
+	// Created up front so other threads never race with its creation.
+	m_extChannel.reset(new vncServerExtChannel(this));
 	m_nScale_viewer = 1;
 	nr_incr_rgn_empty = 0;
 	ThreadHandleCompressFolder = NULL;
@@ -5279,6 +5300,10 @@ vncClient::vncClient() : m_clipboard(ClipboardSettings::defaultServerCaps), Send
 vncClient::~vncClient()
 {
 	cl_connected = false;
+	// Normally already stopped by vncClientThread; make sure the sender thread
+	// is gone before any member it uses is destroyed.
+	if (m_extChannel)
+		m_extChannel->Stop();
 	vnclog.Print(LL_INTINFO, VNCLOG("~vncClient() executing...\n"));
 
 	// Modif sf@2002 - Text Chat
@@ -7458,6 +7483,16 @@ void vncClient::NotifyExtendedClipboardSupport()
 	//adzm 2010-09 - minimize packets. SendExact flushes the queue.
 	m_socket->SendExactQueue((char*)&msg, sz_rfbServerCutTextMsg, rfbServerCutText);
 	m_socket->SendExact((char*)(extendedDataMessage.GetData()), extendedDataMessage.GetDataLength());
+}
+
+vncServerExtChannel* vncClient::ExtChannel()
+{
+	return m_extChannel.get();
+}
+
+bool vncClient::ExtChannelUsable(uint8_t channel) const
+{
+	return m_extChannel && m_extChannel->ChannelUsable(channel);
 }
 
 // adzm 2010-09 - Notify streaming DSM plugin support

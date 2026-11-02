@@ -75,6 +75,12 @@
     <ClCompile Include="..\common\Clipboard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\common\ExtChannel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClientConnectionExt.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Daemon.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -201,6 +207,12 @@
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="AuthDialog.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="ClientConnectionExt.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\ExtChannel.h">
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="ClientConnection.h">

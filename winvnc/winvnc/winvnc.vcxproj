@@ -1415,6 +1415,8 @@ copy "$(OutDir)$(TargetName)$(TargetExt)" c:\uvnc\64\xp</Command>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\common\Clipboard.cpp" />
+    <ClCompile Include="..\..\common\ExtChannel.cpp" />
+    <ClCompile Include="vncExtChannel.cpp" />
     <ClCompile Include="..\..\common\d3des.c" />
     <ClCompile Include="..\..\common\Hyperlinks.cpp" />
     <ClCompile Include="..\..\common\inifile.cpp" />
@@ -3238,6 +3240,8 @@ copy "$(OutDir)$(TargetName)$(TargetExt)" c:\uvnc\64\xp</Command>
     <ClInclude Include="SettingsManager.h" />
     <ClInclude Include="stdhdrs.h" />
     <ClInclude Include="TextChat.h" />
+    <ClInclude Include="..\..\common\ExtChannel.h" />
+    <ClInclude Include="vncExtChannel.h" />
     <ClInclude Include="translate.h" />
     <ClInclude Include="UdpEchoServer.h" />
     <ClInclude Include="UltraVNCService.h" />

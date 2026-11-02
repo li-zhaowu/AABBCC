@@ -68,6 +68,7 @@ using namespace helper;
 
 #include "UltraVNCHelperFunctions.h"
 #include "rfb/HighResolutionWheel.h"
+#include "ClientConnectionExt.h"
 extern HINSTANCE m_hInstResDLL;
 
 // [v1.0.2-jp1 fix]
@@ -374,6 +375,7 @@ bool GetRealOSVersion(OSVERSIONINFOW& osInfo) {
 void ClientConnection::Init(VNCviewerApp *pApp)
 {
 	InitializeCriticalSection(&crit);
+	m_ext.reset(new ViewerExtChannel(this));
 	m_hSessionDialog = NULL;
 	new_ultra_server=false;
 	m_supportsUnicodeTextChat=false;
@@ -818,6 +820,10 @@ void ClientConnection::DoConnection(bool reconnect)
 	//CreateLocalFramebuffer();
 
 	SetupPixelFormat();
+
+	// Fresh extension channel state for this connection; it opens when the
+	// server answers rfbEncodingExtCaps with its Caps.
+	m_ext->Reset();
 
     SetFormatAndEncodings();
 
@@ -4618,6 +4624,9 @@ void ClientConnection::SetFormatAndEncodings()
 	// adzm - 2010-07 - Extended clipboard
 	encs[se->nEncodings++] = Swap32IfLE(rfbEncodingExtendedClipboard);
 
+	// Extension message channel (file clipboard, window, audio, video)
+	encs[se->nEncodings++] = Swap32IfLE(rfbEncodingExtCaps);
+
 	// all multithreaded versions of the plugins support streaming
 	if (m_fUsePlugin && m_pDSMPlugin && m_pDSMPlugin->IsEnabled() && m_pDSMPlugin->SupportsMultithreaded()) {
 		encs[se->nEncodings++] = Swap32IfLE(rfbEncodingPluginStreaming);
@@ -4741,6 +4750,8 @@ void ClientConnection::KillThread()
 		//adzm 2010-09
 		m_nQueueBufferLength = 0;
 	}
+	// After the socket is gone a blocked send returns, so this cannot hang.
+	m_ext->Stop();
 	WaitForSingleObject(KillEvent, 6000);
 }
 
@@ -4754,6 +4765,7 @@ void ClientConnection::SuspendThread()
 	ResetWheelInput();
 	m_bKillThread = true;
 	m_running = false;
+	m_ext->Reset();
 
 	// Reinit encoders stuff
 	delete(zis);
@@ -4814,7 +4826,10 @@ ClientConnection::CloseWindows()
 }
 ClientConnection::~ClientConnection()
 {
-	
+	// The sender thread uses the socket and crit; stop it first.
+	if (m_ext)
+		m_ext->Stop();
+
 	omni_mutex_lock l(m_bitmapdcMutex);
 	if (m_hwndStatus)
 		EndDialog(m_hwndStatus,0);
@@ -5904,6 +5919,11 @@ void* ClientConnection::run_undetached(void* arg) {
                     ::PostMessage(m_hwndMain, RebuildToolbarMessage, 0, 0);
                 }
                     break;
+
+				// Extension message channel
+				case rfbExtMsg:
+					m_ext->ReadAndDispatch();
+					break;
 
 				// adzm 2010-09 - Notify streaming DSM plugin support
                 case rfbNotifyPluginStreaming:

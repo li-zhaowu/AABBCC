@@ -451,6 +451,13 @@ typedef struct {
 // 100 sits in the largest unused client-to-server range (81-126), away from
 // both low-numbered legacy types and the 248-255 extension allocation front.
 #define rfbHighResolutionWheel 100
+// Extension message channel (bidirectional, same number in both directions).
+// Carries file clipboard, window capture, audio and video data. Only sent
+// after negotiation via rfbEncodingExtCaps; see common/ExtChannel.h and
+// docs/design.md. Header: type, channel, flags, subtype (CARD8 each), then
+// CARD32 payload length.
+#define rfbExtMsg 101
+#define sz_rfbExtMsgHeader 8
 #define rfbSetDesktopSize 251
 #define rfbMonitorInfo 252
 #define rfbSetMonitor 254
@@ -511,6 +518,7 @@ typedef struct {
 #define rfbEncodingUnicodeTextChat          0xFFFF8006
 #define rfbEncodingChatFileTransfer         0xFFFF8007
 #define rfbEncodingHighResolutionWheel      0xFFFF8008
+#define rfbEncodingExtCaps                  0xFFFF8100 // viewer supports rfbExtMsg
 
 // Same encoder number as in tight 
 /*
