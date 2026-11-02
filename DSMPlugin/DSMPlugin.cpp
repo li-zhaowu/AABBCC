@@ -1,0 +1,873 @@
+// This file is part of UltraVNC
+// https://github.com/ultravnc/UltraVNC
+// https://uvnc.com/
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// SPDX-FileCopyrightText: Copyright (C) 2002-2025 UltraVNC Team Members. All Rights Reserved.
+// SPDX-FileCopyrightText: Copyright (C) 1999-2002 Vdacc-VNC & eSVNC Projects. All Rights Reserved.
+//
+
+
+//
+//
+// DSMPlugin.cpp: implementation of the CDSMPlugin class.
+//
+//////////////////////////////////////////////////////////////////////
+//
+// This class is the interface between UltraVNC and plugins 
+// (third party dlls) that may be developed (written, exported and 
+// provided by authorized individuals - according to the law of their 
+// country) to alter/modify/process/encrypt rfb data streams between 
+// UltraVNC Viewer and UltraVNC Server.
+//
+// The goal here is not to design and develop an extensive, versatile
+// and powerfull plugin system but to provide people a way
+// to easely customize the VNC communication data between client and server.
+//
+// It handles the following tasks:
+// 
+// - Listing of all plugins found in the vnc directory (dlls, with ".dsm" extension)
+//
+// - Loading of a given plugin
+//
+// - Interface between vnc and the plugin functions: 
+//   - Init()               Initialize the plugin
+//   - SetParams()          Set Password, or key or other. If more than one param, uses ',' as separator
+//   - GetParams()          Give Password, or key or other. If more than one param, uses ',' as separator
+//   - DescribePlugin()     Give the Plugin ID string (Name, Author, Date, Version, FileName)
+//   - TransformBuffer()    Tell the plugin to do it's transformation against the data in the buffer
+//   - RestoreBuffer()      Tell the plugin to restore data to its original state   
+//   - Shutdown()           Cleanup and shutdown the plugin
+//   - FreeBuffer()         Free a buffer used in the plugin
+//	 - Reset()
+//
+// - Unloading of the current loaded plugin
+//
+//  (2009)
+//  Multithreaded DSM plugin framework created by Adam D. Walling aka adzm
+// - Creating a new (threadsafe) instance of a DSM plugin encryptor/decryptor
+//   - CreatePluginInterface -- returns a pointer to a new IPlugin-derived class,
+//       which is then used to transform and restore buffers in a threadsafe manner.
+// 
+// WARNING: For the moment, only ONE instance of this class must exist in UltraVNC Viewer and UltraVNC Server
+// Consequently, UltraVNC Server will impose all its clients to use the same plugin. Maybe we'll 
+// improve that soon. It depends on the demand/production of DSM plugins.
+
+#include <winsock2.h>
+#include <memory.h>
+#include <stdio.h>
+#include <string.h>
+#include "DSMPlugin.h"
+#include <stdlib.h>
+#include <limits.h>
+#include <memory>
+#ifdef SC_20
+	#include "./winvnc/loadmemory/loadDllFromMemory.h"
+#endif // SC_20
+
+#ifndef _VIEWER
+#include "../winvnc/winvnc/vnclog.h"
+extern VNCLog vnclog;
+#define VNCLOG(s)	(__FUNCTION__ " : " s)
+#endif
+
+//
+// Utils
+//
+BOOL MyStrToken(LPSTR szToken, LPSTR lpString, int nTokenNum, char cSep)
+{
+	int i = 1;
+	while (i < nTokenNum)
+	{
+		while ( *lpString && (*lpString != cSep) &&(*lpString != '\0'))
+		{
+			lpString++;
+		}
+		i++;
+		lpString++;
+	}
+	while ((*lpString != cSep) && (*lpString != '\0'))
+	{
+		*szToken = *lpString;
+		szToken++;
+		lpString++;
+	}
+	*szToken = '\0' ;
+	if (( ! *lpString ) || (! *szToken)) return NULL;
+	return FALSE;
+}
+
+#include <fstream>
+bool IsDll64Bit(const char* dllPath) {
+	std::ifstream file(dllPath, std::ios::binary | std::ios::in);
+	if (!file.is_open()) {
+		return false;
+	}
+
+	IMAGE_DOS_HEADER dosHeader;
+	file.read(reinterpret_cast<char*>(&dosHeader), sizeof(dosHeader));
+	if (dosHeader.e_magic != IMAGE_DOS_SIGNATURE) {
+		return false;
+	}
+
+	file.seekg(dosHeader.e_lfanew, std::ios::beg);
+	IMAGE_NT_HEADERS ntHeaders;
+	file.read(reinterpret_cast<char*>(&ntHeaders), sizeof(ntHeaders));
+	if (ntHeaders.Signature != IMAGE_NT_SIGNATURE) {
+		return false;
+	}
+
+	return ntHeaders.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64;
+}
+
+//
+//
+//
+CDSMPlugin::CDSMPlugin()
+{
+	m_fLoaded = false;
+	m_fEnabled = false;
+	m_lPassLen = 0;
+
+	m_pTransBuffer = NULL;
+	m_pRestBuffer = NULL;
+
+	sprintf_s(m_szPluginName, "Unknown");
+	sprintf_s(m_szPluginVersion, "0.0.0");
+	sprintf_s(m_szPluginDate, "12-12-2002");
+	sprintf_s(m_szPluginAuthor, "Someone");
+	sprintf_s(m_szPluginFileName, "Plugin.dsm"); // No path, just the filename
+
+	m_hPDll = NULL;
+
+	// Plugin's functions pointers init
+	/*
+	STARTUP			m_PStartup = NULL;
+	SHUTDOWN		m_PShutdown = NULL;
+	SETPARAMS		m_PSetParams = NULL;
+	GETPARAMS		m_PGetParams = NULL;
+	TRANSFORMBUFFER m_PTransformBuffer = NULL;
+	RESTOREBUFFER	m_PRestoreBuffer = NULL;
+	TRANSFORMBUFFER	m_PFreeBuffer = NULL;
+	RESET			m_PReset = NULL;
+	//adzm - 2009-06-21
+	CREATEPLUGININTERFACE	m_PCreatePluginInterface = NULL;
+	*/
+
+	//adzm - 2009-07-05
+	// Plugin's functions pointers init
+	m_PDescription = NULL;
+	m_PStartup = NULL;
+	m_PShutdown = NULL;
+	m_PSetParams = NULL;
+	m_PGetParams = NULL;
+	m_PTransformBuffer = NULL;
+	m_PRestoreBuffer = NULL;
+	m_PFreeBuffer = NULL;
+	m_PReset = NULL;
+	//adzm - 2009-06-21
+	m_PCreatePluginInterface = NULL;
+	//adzm 2010-05-10
+	m_PCreateIntegratedPluginInterface = NULL;
+	//adzm 2010-05-12 - dsmplugin config
+	m_PConfig = NULL;
+}
+
+//
+//
+//
+CDSMPlugin::~CDSMPlugin()
+{
+	// TODO: Log events
+	if (IsLoaded())
+		UnloadPlugin();
+}
+
+
+//
+//
+//
+void CDSMPlugin::SetEnabled(bool fEnable)
+{
+	m_fEnabled =  fEnable;
+}
+
+
+//
+//
+//
+void CDSMPlugin::SetLoaded(bool fEnable)
+{
+	m_fLoaded =  fEnable;
+}
+
+
+//
+//
+//
+char* CDSMPlugin::DescribePlugin(void)
+{
+	// TODO: Log events
+	char* szDescription = NULL;
+	if (m_PDescription)
+	{
+		 szDescription = (*m_PDescription)();
+		 if (szDescription != NULL)
+		 {
+			 //adzm 2010-05-10 - this was inconsistent with the way the plugins are written
+			MyStrToken(m_szPluginName, szDescription, 1, ',');
+			MyStrToken(m_szPluginVersion, szDescription, 2, ',');
+			MyStrToken(m_szPluginDate, szDescription, 3, ',');
+			MyStrToken(m_szPluginAuthor, szDescription, 4, ',');
+			MyStrToken(m_szPluginFileName, szDescription, 5, ',');
+		 }
+		 return szDescription;
+	}
+
+	else 
+		return "No Plugin loaded";
+}
+
+
+//
+// Init the DSMPlugin system
+//
+bool CDSMPlugin::InitPlugin(void)
+{
+	// TODO: Log events
+	int nRes = (*m_PStartup)();
+	if (nRes < 0) return false;
+	else return true;
+}
+
+//
+// Reset the DSMPlugin
+//
+bool CDSMPlugin::ResetPlugin(void)
+{
+	// TODO: Log events
+	int nRes = (*m_PReset)();
+	if (nRes < 0) return false;
+	else return true;
+}
+
+
+//
+// szParams is the key (or password) that is transmitted to the loaded DSMplugin
+//
+bool CDSMPlugin::SetPluginParams(HWND hWnd, char* szParams, char* szConfig, char** pszNewConfig)
+{
+	// TODO: Log events
+
+	//adzm 2010-05-12 - dsmplugin config
+	if (m_PConfig) {
+		int nRes = (*m_PConfig)(hWnd, szParams, szConfig, pszNewConfig);		
+		if (nRes > 0) return true; else return false;
+	} else {
+		int nRes = (*m_PSetParams)(hWnd, szParams);
+		if (nRes > 0) return true; else return false;
+	}
+}
+
+
+//
+// Return the loaded DSMplugin current param(s)
+//
+char* CDSMPlugin::GetPluginParams(void)
+{
+	// 
+	return (*m_PGetParams)();
+
+}
+
+
+//
+// List all the plugins is the current APP directory in the given ComboBox
+//
+int CDSMPlugin::ListPlugins(HWND hComboBox)
+{
+	// TODO: Log events
+#ifdef UNICODE
+	WIN32_FIND_DATAW fd;
+	HANDLE ff;
+	int fRet = 1;
+	int nFiles = 0;
+	wchar_t szCurrentDir[MAX_PATH];
+
+	if (GetModuleFileNameW(NULL, szCurrentDir, MAX_PATH))
+	{
+		wchar_t* p = wcsrchr(szCurrentDir, L'\\');
+		if (p == NULL)
+			return 0;
+		*p = L'\0';
+	}
+	else
+		return 0;
+	if (wcslen(szCurrentDir) < 1)
+		return 0;
+	if (szCurrentDir[wcslen(szCurrentDir) - 1] != L'\\') wcscat_s(szCurrentDir, L"\\");
+	wcscat_s(szCurrentDir, L"*.dsm"); // The DSMplugin dlls must have this extension
+
+	ff = FindFirstFileW(szCurrentDir, &fd);
+	if (ff == INVALID_HANDLE_VALUE)
+	{
+		// Todo: Log error here
+		return 0;
+	}
+
+	while (fRet != 0)
+	{
+		SendMessage(hComboBox, CB_ADDSTRING, 0, (LPARAM)(fd.cFileName));
+		nFiles++;
+		fRet = FindNextFile(ff, &fd);
+	}
+
+	FindClose(ff);
+#else
+	WIN32_FIND_DATAA fd;
+	HANDLE ff;
+	int fRet = 1;
+	int nFiles = 0;
+	char szCurrentDir[MAX_PATH];
+
+	if (GetModuleFileNameA(NULL, szCurrentDir, MAX_PATH))
+	{
+		char* p = strrchr(szCurrentDir, '\\');
+		if (p == NULL)
+			return 0;
+		*p = '\0';
+	}
+	else
+		return 0;
+	if (strlen(szCurrentDir) < 1)
+		return 0;
+	if (szCurrentDir[strlen(szCurrentDir) - 1] != '\\') strcat_s(szCurrentDir, MAX_PATH, "\\");
+	strcat_s(szCurrentDir, MAX_PATH, "*.dsm"); // The DSMplugin dlls must have this extension
+
+	ff = FindFirstFileA(szCurrentDir, &fd);
+	if (ff == INVALID_HANDLE_VALUE)
+	{
+		// Todo: Log error here
+		return 0;
+	}
+
+	while (fRet != 0)
+	{
+		SendMessage(hComboBox, CB_ADDSTRING, 0, (LPARAM)(fd.cFileName));
+		nFiles++;
+		fRet = FindNextFileA(ff, &fd);
+	}
+
+	FindClose(ff);
+#endif // UNICODE
+
+	return nFiles;
+}
+
+
+
+//
+// Load the given DSMplugin and map its functions
+//
+bool CDSMPlugin::LoadPlugin(char* szPlugin, bool fAllowMulti)
+{
+#ifndef SC_20
+	// sf@2003 - Multi dll trick 
+	// I really don't like doing this kind of dirty workaround but I have no time to do
+	// better for now. Used only by a listening viewer.
+	// Create a numbered temporary copy of the original plugin dll and load it (viewer only, for now)
+	if (fAllowMulti)
+	{
+		bool fDllCopyCreated = false;
+		int i = 1;
+		char szDllCopyName[MAX_PATH];
+		char szCurrentDir[MAX_PATH];
+		char szCurrentDir_szPlugin[MAX_PATH];
+		char szCurrentDir_szDllCopyName[MAX_PATH];
+		while (!fDllCopyCreated)
+		{
+			strcpy_s(szDllCopyName, 260, szPlugin);
+			szDllCopyName[strlen(szPlugin) - 4] = '\0'; //remove the ".dsm" extension
+			sprintf_s(szDllCopyName, "%s-tmp.d%d", szDllCopyName, i++);
+			//fDllCopyCreated = (FALSE != CopyFile(szPlugin, szDllCopyName, false));
+			// Note: Let's be really dirty; Overwrite if it's possible only (dll not loaded). 
+			// This way if for some reason (abnormal process termination) the dll wasn't previously 
+			// normally deleted we overwrite/clean it with the new one at the same time.
+			//strcpy_s(szCurrentDir_szDllCopyName,szDllCopyName);
+			//DWORD error=GetLastError();
+			//if (error==2)
+			{
+#ifdef UNICODE
+				wchar_t szCurrentDir2[MAX_PATH];
+				if (GetModuleFileNameW(NULL, szCurrentDir2, MAX_PATH))
+				{
+					wchar_t* p = wcsrchr(szCurrentDir2, L'\\');
+					*p = L'\0';
+				}
+				wchar_t lpPathBuffer[MAX_PATH];
+				DWORD dwBufSize = MAX_PATH;
+				DWORD dwRetVal;
+				dwRetVal = GetTempPathW(dwBufSize, lpPathBuffer);
+				if (dwRetVal > dwBufSize || (dwRetVal == 0))
+					wcscpy_s(lpPathBuffer, szCurrentDir2);
+
+				// Initialize szCurrentDir from szCurrentDir2
+				wcstombs(szCurrentDir, szCurrentDir2, MAX_PATH);
+				strcpy_s(szCurrentDir_szPlugin, MAX_PATH, szCurrentDir);
+				strcat_s(szCurrentDir_szPlugin, MAX_PATH, "\\");
+				strcat_s(szCurrentDir_szPlugin, MAX_PATH, szPlugin);
+
+				char lpPathBufferA[MAX_PATH];
+				wcstombs(lpPathBufferA, lpPathBuffer, MAX_PATH);
+				strcpy_s(szCurrentDir_szDllCopyName, MAX_PATH, lpPathBufferA);
+				strcat_s(szCurrentDir_szDllCopyName, MAX_PATH, szDllCopyName);
+				wchar_t szCurrentDir_szPluginW[MAX_PATH];
+				wchar_t szCurrentDir_szDllCopyNameW[MAX_PATH];
+				MultiByteToWideChar(CP_ACP, 0, szCurrentDir_szPlugin, -1, szCurrentDir_szPluginW, MAX_PATH);
+				MultiByteToWideChar(CP_ACP, 0, szCurrentDir_szDllCopyName, -1, szCurrentDir_szDllCopyNameW, MAX_PATH);
+				fDllCopyCreated = (FALSE != CopyFileW(szCurrentDir_szPluginW, szCurrentDir_szDllCopyNameW, false));
+#else
+				char szCurrentDir2[MAX_PATH];
+				if (GetModuleFileNameA(NULL, szCurrentDir2, MAX_PATH))
+				{
+					char* p = strrchr(szCurrentDir2, '\\');
+					*p = '\0';
+				}
+				char lpPathBuffer[MAX_PATH];
+				DWORD dwBufSize = MAX_PATH;
+				DWORD dwRetVal;
+				dwRetVal = GetTempPathA(dwBufSize, lpPathBuffer);
+				if (dwRetVal > dwBufSize || (dwRetVal == 0))
+					strcpy_s(lpPathBuffer, MAX_PATH, szCurrentDir2);
+
+				strcpy_s(szCurrentDir_szPlugin, MAX_PATH, szCurrentDir);
+				strcat_s(szCurrentDir_szPlugin, MAX_PATH, "\\");
+				strcat_s(szCurrentDir_szPlugin, MAX_PATH, szPlugin);
+
+				strcpy_s(szCurrentDir_szDllCopyName, MAX_PATH, lpPathBuffer);
+				strcat_s(szCurrentDir_szDllCopyName, MAX_PATH, szDllCopyName);
+				fDllCopyCreated = (FALSE != CopyFileA(szCurrentDir_szPlugin, szCurrentDir_szDllCopyName, false));
+#endif // UNICODE
+			}
+			if (i > 99) break; // Just in case...
+		}
+		strcpy_s(m_szDllName, szCurrentDir_szDllCopyName);
+#ifdef _X64
+		if (!IsDll64Bit(m_szDllName)) {
+#ifdef _VIEWER
+			MessageBoxW(NULL, L"plugin has wrong arch (x86)", L"UltraVNC - Plugin", MB_ICONSTOP);
+#else
+			vnclog.Print(0, VNCLOG("The encryption plugin has wrong arch (x86) \n"));
+#endif
+			return false;
+		}
+#else
+		if (IsDll64Bit(m_szDllName)) {
+#ifdef _VIEWER
+			MessageBoxW(NULL, L"plugin has wrong arch (x64)", L"UltraVNC - Plugin", MB_ICONSTOP);
+#else
+			vnclog.Print(0, VNCLOG("The encryption plugin has wrong arch (x64) \n"));
+#endif
+			return false;
+		}
+#endif
+#ifdef UNICODE
+		wchar_t m_szDllNameW[MAX_PATH];
+		MultiByteToWideChar(CP_ACP, 0, m_szDllName, -1, m_szDllNameW, MAX_PATH);
+		m_hPDll = LoadLibraryW(m_szDllNameW);
+#else
+		m_hPDll = LoadLibraryA(m_szDllName);
+#endif // UNICODE
+	}
+	else // Use the original plugin dll
+	{
+		ZeroMemory(m_szDllName, 260);
+#ifdef UNICODE
+		wchar_t szPluginW[MAX_PATH];
+		MultiByteToWideChar(CP_ACP, 0, szPlugin, -1, szPluginW, MAX_PATH);
+		m_hPDll = LoadLibraryW(szPluginW);
+#else
+		m_hPDll = LoadLibraryA(szPlugin);
+#endif // UNICODE
+		//Try current PATH
+		if (m_hPDll==NULL)
+		{
+#ifdef UNICODE
+			wchar_t szCurrentDirW[MAX_PATH] = L"";
+			wchar_t szCurrentDir_szPluginW[MAX_PATH] = L"";
+			if (GetModuleFileNameW(NULL, szCurrentDirW, MAX_PATH))
+				{
+					wchar_t* p = wcsrchr(szCurrentDirW, L'\\');
+					*p = L'\0';
+				}
+			wcscpy_s(szCurrentDir_szPluginW, MAX_PATH, szCurrentDirW);
+			wcscat_s(szCurrentDir_szPluginW, MAX_PATH, L"\\");
+			wchar_t szPluginW2[MAX_PATH];
+			MultiByteToWideChar(CP_ACP, 0, szPlugin, -1, szPluginW2, MAX_PATH);
+			wcscat_s(szCurrentDir_szPluginW, MAX_PATH, szPluginW2);
+#ifdef _X64
+			char szCurrentDir_szPluginA[MAX_PATH];
+			wcstombs(szCurrentDir_szPluginA, szCurrentDir_szPluginW, MAX_PATH);
+			if (!IsDll64Bit(szCurrentDir_szPluginA)) {
+#ifdef _VIEWER
+				MessageBoxW(NULL, L"The encryption plugin has wrong arch (x86)", L"UltraVNC - Plugin", MB_ICONSTOP);
+#else
+				vnclog.Print(0, VNCLOG("The encryption plugin has wrong arch (x86) \n"));
+#endif
+				return false;
+			}
+#else
+			char szCurrentDir_szPluginA2[MAX_PATH];
+			wcstombs(szCurrentDir_szPluginA2, szCurrentDir_szPluginW, MAX_PATH);
+			if (IsDll64Bit(szCurrentDir_szPluginA2)) {
+#ifdef _VIEWER
+				MessageBoxW(NULL, L"The encryption plugin has wrong arch (x64)", L"UltraVNC - Plugin", MB_ICONSTOP);
+#else
+			vnclog.Print(0, VNCLOG("The encryption plugin has wrong arch (x64) \n"));
+#endif
+				return false;
+			}
+#endif
+			m_hPDll = LoadLibraryW(szCurrentDir_szPluginW);
+#else
+			char szCurrentDirA[MAX_PATH] = "";
+			char szCurrentDir_szPluginA[MAX_PATH] = "";
+			if (GetModuleFileNameA(NULL, szCurrentDirA, MAX_PATH))
+				{
+					char* p = strrchr(szCurrentDirA, '\\');
+					*p = '\0';
+				}
+			strcpy_s(szCurrentDir_szPluginA, MAX_PATH, szCurrentDirA);
+			strcat_s(szCurrentDir_szPluginA, MAX_PATH, "\\");
+			strcat_s(szCurrentDir_szPluginA, MAX_PATH, szPlugin);
+			m_hPDll = LoadLibraryA(szCurrentDir_szPluginA);
+#endif // UNICODE
+		}
+	}
+
+	if (m_hPDll == NULL) return false;
+
+	m_PDescription     = (DESCRIPTION)     GetProcAddress(m_hPDll, "Description");
+	m_PStartup         = (STARTUP)         GetProcAddress(m_hPDll, "Startup");
+	m_PShutdown        = (SHUTDOWN)        GetProcAddress(m_hPDll, "Shutdown");
+	m_PSetParams       = (SETPARAMS)       GetProcAddress(m_hPDll, "SetParams");
+	m_PGetParams       = (GETPARAMS)       GetProcAddress(m_hPDll, "GetParams");
+	m_PTransformBuffer = (TRANSFORMBUFFER) GetProcAddress(m_hPDll, "TransformBuffer");
+	m_PRestoreBuffer   = (RESTOREBUFFER)   GetProcAddress(m_hPDll, "RestoreBuffer");
+	m_PFreeBuffer      = (FREEBUFFER)      GetProcAddress(m_hPDll, "FreeBuffer");
+	m_PReset           = (RESET)           GetProcAddress(m_hPDll, "Reset");
+	//adzm - 2009-06-21
+	m_PCreatePluginInterface	= (CREATEPLUGININTERFACE)	GetProcAddress(m_hPDll, "CreatePluginInterface");
+	//adzm 2010-05-10
+	m_PCreateIntegratedPluginInterface	= (CREATEINTEGRATEDPLUGININTERFACE)	GetProcAddress(m_hPDll, "CreateIntegratedPluginInterface");
+	//adzm 2010-05-12 - dsmplugin config
+	m_PConfig         = (CONFIG)           GetProcAddress(m_hPDll, "Config");
+#else
+	loadDllFromMemory = std::make_unique<LoadDllFromMemory>();
+	loadDllFromMemory->LoadPlugin(m_PDescription, m_PShutdown, m_PStartup, m_PSetParams, m_PGetParams,
+		m_PTransformBuffer, m_PRestoreBuffer, m_PFreeBuffer, m_PReset,
+		m_PCreatePluginInterface, m_PCreateIntegratedPluginInterface, m_PConfig);
+#endif // SC_20
+
+	if (m_PStartup == NULL || m_PShutdown == NULL || m_PSetParams == NULL || m_PGetParams == NULL
+		|| m_PTransformBuffer == NULL || m_PRestoreBuffer == NULL || m_PFreeBuffer == NULL ||
+		m_PReset == NULL || m_PCreatePluginInterface == NULL || m_PCreateIntegratedPluginInterface == NULL ||
+		m_PConfig == NULL)
+	{
+#ifndef SC_20
+		FreeLibrary(m_hPDll);
+		if (*m_szDllName) {
+#ifdef UNICODE
+			wchar_t szDllNameW[MAX_PATH];
+			MultiByteToWideChar(CP_ACP, 0, m_szDllName, -1, szDllNameW, MAX_PATH);
+			DeleteFileW(szDllNameW);
+#else
+			DeleteFileA(m_szDllName);
+#endif // UNICODE
+		}
+#endif // SC_20
+		return false;
+	}
+
+	SetLoaded(true);
+	return true;
+}
+
+
+//
+// Unload the current DSMPlugin from memory
+//
+bool CDSMPlugin::UnloadPlugin(void)
+{
+	// TODO: Log events
+	// Force the DSMplugin to free the buffers it allocated
+	if (m_pTransBuffer != NULL) (*m_PFreeBuffer)(m_pTransBuffer);
+	if (m_pRestBuffer != NULL) (*m_PFreeBuffer)(m_pRestBuffer);
+	
+	m_pTransBuffer = NULL;
+	m_pRestBuffer = NULL;
+
+	SetLoaded(false);
+
+	if ((*m_PShutdown)())
+	{
+		bool fFreed = false;
+#ifndef SC_20
+		fFreed = (FALSE != FreeLibrary(m_hPDll));
+		if (*m_szDllName) {
+#ifdef UNICODE
+			wchar_t szDllNameW[MAX_PATH];
+			MultiByteToWideChar(CP_ACP, 0, m_szDllName, -1, szDllNameW, MAX_PATH);
+			DeleteFileW(szDllNameW);
+#else
+			DeleteFileA(m_szDllName);
+#endif // UNICODE
+		}
+#endif // SC_20
+		return fFreed;
+	}
+	else
+		return false;
+	
+}
+
+//adzm - 2009-06-21
+IPlugin* CDSMPlugin::CreatePluginInterface()
+{
+	if (m_PCreatePluginInterface) {
+		return m_PCreatePluginInterface();
+	} else {
+		return NULL;
+	}
+}
+
+bool CDSMPlugin::SupportsMultithreaded()
+{
+	//adzm 2010-05-10
+	return m_PCreatePluginInterface != NULL || m_PCreateIntegratedPluginInterface != NULL;
+}
+
+//adzm 2010-05-10
+IIntegratedPlugin* CDSMPlugin::CreateIntegratedPluginInterface()
+{
+	if (m_PCreateIntegratedPluginInterface) {
+		return m_PCreateIntegratedPluginInterface();
+	} else {
+		return NULL;
+	}
+}
+
+bool CDSMPlugin::SupportsIntegrated()
+{
+	return m_PCreateIntegratedPluginInterface != NULL;
+}
+
+
+//
+// Tell the plugin to do its transformation on the source data buffer
+// Return: pointer on the new transformed buffer (allocated by the plugin)
+// nTransformedDataLen is the number of bytes contained in the transformed buffer
+//
+BYTE* CDSMPlugin::TransformBuffer(BYTE* pDataBuffer, int nDataLen, int* pnTransformedDataLen)
+{
+	// FixME: possible pb with this mutex in UltraVNC Server
+#ifdef _VIEWER
+	omni_mutex_lock l(m_TransMutex);
+#else
+	omni_mutex_lock l(m_TransMutex,105);
+#endif // _VIEWER
+
+	m_pTransBuffer = (*m_PTransformBuffer)(pDataBuffer, nDataLen, pnTransformedDataLen);
+
+	return m_pTransBuffer;
+}
+
+
+// - If pRestoredDataBuffer = NULL, the plugin check its local buffer and return the pointer
+// - Otherwise, restore data contained in its rest. buffer and put the result in pRestoredDataBuffer
+//   pnRestoredDataLen is the number bytes put in pRestoredDataBuffers
+BYTE* CDSMPlugin::RestoreBufferStep1(BYTE* pRestoredDataBuffer, int nDataLen, int* pnRestoredDataLen)
+{
+	//m_RestMutex.lock();
+	m_pRestBuffer = (*m_PRestoreBuffer)(pRestoredDataBuffer, nDataLen, pnRestoredDataLen);
+	return m_pRestBuffer;
+}
+
+BYTE* CDSMPlugin::RestoreBufferStep2(BYTE* pRestoredDataBuffer, int nDataLen, int* pnRestoredDataLen)
+{
+	m_pRestBuffer = (*m_PRestoreBuffer)(pRestoredDataBuffer, nDataLen, pnRestoredDataLen);
+	//m_RestMutex.unlock();
+	return NULL;
+}
+
+void CDSMPlugin::RestoreBufferUnlock()
+{
+	//m_RestMutex.unlock();
+}
+
+
+const char Base64::cb64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/*
+** Translation Table to decode (created by author)
+*/
+const char Base64::cd64[] = "|$$$}rstuvwxyz{$$$$$$$>?@ABCDEFGHIJKLMNOPQRSTUVW$$$$$$XYZ[\\]^_`abcdefghijklmnopq";
+
+
+void Base64::encodeblock(BYTE in[3], BYTE out[4], int len)
+{
+    out[0] = cb64[ in[0] >> 2 ];
+    out[1] = cb64[ ((in[0] & 0x03) << 4) | ((in[1] & 0xf0) >> 4) ];
+    out[2] = (BYTE) (len > 1 ? cb64[ ((in[1] & 0x0f) << 2) | ((in[2] & 0xc0) >> 6) ] : '=');
+    out[3] = (BYTE) (len > 2 ? cb64[ in[2] & 0x3f ] : '=');
+}
+
+void Base64::decodeblock(BYTE in[4], BYTE out[3])
+{
+    out[ 0 ] = (BYTE) (in[0] << 2 | in[1] >> 4);
+    out[ 1 ] = (BYTE) (in[1] << 4 | in[2] >> 2);
+    out[ 2 ] = (BYTE) (((in[2] << 6) & 0xc0) | in[3]);
+}
+
+void Base64::encode(const char* szIn, char* szOut)
+{
+    BYTE in[3]{}, out[4];
+    int i, len;
+
+	const char* pIn = szIn;
+	char* pOut = szOut;
+
+    while(*pIn != '\0') {
+        len = 0;
+        for( i = 0; i < 3; i++ ) {
+            in[i] = (BYTE)*pIn;
+			if (*pIn != '\0') {
+				len++;
+				pIn++;
+			}
+            else {
+                in[i] = 0;
+            }
+        }
+        if( len ) {
+            encodeblock( in, out, len );
+            for( i = 0; i < 4; i++ ) {
+				*pOut = (char)out[i];
+				pOut++;
+            }
+        }
+    }
+	*pOut = '\0';
+}
+
+void Base64::decode(const char* szIn, char* szOut)
+{
+    BYTE in[4]{}, out[3], v, o;
+    int i, len;
+
+	const char* pIn = szIn;
+	char* pOut = szOut;
+
+    while(*pIn != '\0') {
+        for( len = 0, i = 0; i < 4 && *pIn != '\0'; i++ ) {
+            v = 0;
+			o = 0;
+            while( *pIn != '\0' && v == 0 ) {
+                v = (BYTE)*pIn;
+				o = v;
+				pIn++;
+
+                v = (BYTE) ((v < 43 || v > 122) ? 0 : cd64[ v - 43 ]);
+                if( v ) {
+                    v = (BYTE) ((v == '$') ? 0 : v - 61);
+                }
+            }
+            if( o != '\0' && v != 0) {
+                len++;
+                //if( v ) {
+                    in[ i ] = (BYTE) (v - 1);
+                //}
+            }
+            else {
+                in[i] = 0;
+            }
+        }
+        if( len ) {
+            decodeblock( in, out );
+            for( i = 0; i < len - 1; i++ ) {
+				*pOut = (char)out[i];
+				pOut++;
+            }
+        }
+    }
+	*pOut = '\0';
+}
+
+
+void ConfigHelper::SetConfigHelper(DWORD dwFlags, char* szPassphrase)
+{
+	m_szConfig = new char[512];
+	m_szConfig[0] = '\0';
+
+	char szEncoded[256]{};
+	szEncoded[0] = '\0';
+	if (szPassphrase[0] != '\0') {
+		Base64::encode(szPassphrase, szEncoded);
+	}
+
+	_snprintf_s(m_szConfig, 512 - 1 - 1, _TRUNCATE, "SecureVNC;0;0x%08x;%s", dwFlags, szEncoded);
+}
+
+ConfigHelper::ConfigHelper(const char* szConfig)
+	: m_dwFlags(0x01 | 0x4000 | 0x00100000)
+	, m_szConfig(NULL)
+	, m_szPassphrase(NULL)
+{
+	m_szPassphrase = new char[256];
+	m_szPassphrase[0] = '\0';
+
+	if (szConfig == NULL) return;
+
+	const char* szHeader = "SecureVNC;0;";
+
+	if (strncmp(szConfig, "SecureVNC;0;", strlen(szHeader)) != 0) {
+		return;
+	}
+	
+	szConfig += strlen(szHeader);
+
+	char* szEnd = NULL;
+	DWORD dwFlags = strtoul(szConfig, &szEnd, 16);
+
+	if (dwFlags != ULONG_MAX) {
+		m_dwFlags = dwFlags;
+
+		if (szEnd && szEnd != szConfig) {
+			//m_szPassphrase = new char[256];
+			//m_szPassphrase[0] = '\0';
+
+			char szEncoded[256]{};
+			szEncoded[0] = '\0';
+
+			strcpy_s(szEncoded, 256 - 1, szEnd + 1);
+
+			if (szEncoded[0] != '\0') {
+				Base64::decode(szEncoded, m_szPassphrase);
+			}
+		}
+	}
+}
+
+ConfigHelper::~ConfigHelper()
+{
+	if (m_szConfig) {
+		delete[] m_szConfig;
+		m_szConfig = NULL;
+	}
+
+	if (m_szPassphrase) {
+		delete[] m_szPassphrase;
+		m_szPassphrase = NULL;
+	}
+}

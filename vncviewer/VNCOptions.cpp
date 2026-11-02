@@ -1,0 +1,1978 @@
+// This file is part of UltraVNC
+// https://github.com/ultravnc/UltraVNC
+// https://uvnc.com/
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// SPDX-FileCopyrightText: Copyright (C) 2002-2025 UltraVNC Team Members. All Rights Reserved.
+// SPDX-FileCopyrightText: Copyright (C) 1999-2002 Vdacc-VNC & eSVNC Projects. All Rights Reserved.
+//
+
+
+// VNCOptions.cpp: implementation of the VNCOptions class.
+
+#include "stdhdrs.h"
+#include "vncviewer.h"
+#include "VNCOptions.h"
+#include "Exception.h"
+#include "common/win32_helpers.h"
+#include <shlobj.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <direct.h>
+#include "Snapshot.h"
+#include "UltraVNCHelperFunctions.h"
+using namespace helper;
+extern HINSTANCE m_hInstResDLL;
+
+extern wchar_t sz_A2[64];
+extern wchar_t sz_D1[64];
+extern wchar_t sz_D2[64];
+extern wchar_t sz_D3[64];
+extern wchar_t sz_D4[64];
+extern wchar_t sz_D5[64];
+extern wchar_t sz_D6[64];
+extern wchar_t sz_D7[64];
+extern wchar_t sz_D8[64];
+extern wchar_t sz_D9[64];
+extern wchar_t sz_D10[64];
+extern wchar_t sz_D11[64];
+extern wchar_t sz_D12[64];
+extern wchar_t sz_D13[64];
+extern wchar_t sz_D14[64];
+extern wchar_t sz_D15[64];
+extern wchar_t sz_D16[64];
+extern wchar_t sz_D17[64];
+extern wchar_t sz_D18[64];
+extern wchar_t sz_D19[64];
+extern wchar_t sz_D20[64];
+extern wchar_t sz_D21[64];
+extern wchar_t sz_D22[64];
+extern wchar_t sz_D23[64];
+extern wchar_t sz_D24[64];
+extern wchar_t sz_D25[64];
+extern wchar_t sz_D26[64];
+extern wchar_t sz_D27[64];
+extern wchar_t sz_D28[64];
+extern bool g_disable_sponsor;
+bool config_specified = false;
+
+int EncodingFromString(const wchar_t* szEncoding)
+{
+	if (_wcsicmp(szEncoding, L"raw") == 0) {
+		return rfbEncodingRaw;
+	}
+	else if (_wcsicmp(szEncoding, L"rre") == 0) {
+		return rfbEncodingRRE;
+	}
+	else if (_wcsicmp(szEncoding, L"corre") == 0) {
+		return rfbEncodingCoRRE;
+	}
+	else if (_wcsicmp(szEncoding, L"hextile") == 0) {
+		return rfbEncodingHextile;
+	}
+	else if (_wcsicmp(szEncoding, L"zlib") == 0) {
+		return rfbEncodingZlib;
+	}
+	else if (_wcsicmp(szEncoding, L"zlibhex") == 0) {
+		return rfbEncodingZlibHex;
+	}
+	else if (_wcsicmp(szEncoding, L"tight") == 0) {
+		return rfbEncodingTight;
+	}
+	else if (_wcsicmp(szEncoding, L"ultra") == 0) {
+		return rfbEncodingUltra;
+	}
+	else if (_wcsicmp(szEncoding, L"ultra2") == 0) {
+		return rfbEncodingUltra2;
+	}
+	else if (_wcsicmp(szEncoding, L"zrle") == 0) {
+		return rfbEncodingZRLE;
+	}
+	else if (_wcsicmp(szEncoding, L"zywrle") == 0) {
+		return rfbEncodingZYWRLE;
+#ifdef _XZ
+	}
+	else if (_wcsicmp(szEncoding, L"xz") == 0) {
+		return rfbEncodingXZ;
+	}
+	else if (_wcsicmp(szEncoding, L"xzyw") == 0) {
+		return rfbEncodingXZYW;
+#endif
+	}
+	else {
+		return -1;
+	}
+}
+
+VNCOptions::VNCOptions()
+{
+	for (int i = 0; i <= LASTENCODING; i++)
+		m_UseEnc[i] = false;
+
+	m_UseEnc[rfbEncodingRaw] = true;
+	m_UseEnc[rfbEncodingCopyRect] = true;
+	m_UseEnc[rfbEncodingRRE] = true;
+	m_UseEnc[rfbEncodingCoRRE] = true;
+	m_UseEnc[rfbEncodingHextile] = true;
+	m_UseEnc[rfbEncodingZlib] = true;
+	m_UseEnc[rfbEncodingTight] = true;
+	m_UseEnc[rfbEncodingZlibHex] = true;
+	m_UseEnc[rfbEncodingZRLE] = true;
+	m_UseEnc[rfbEncodingZYWRLE] = true;
+	m_UseEnc[rfbEncodingUltra] = true;
+	m_UseEnc[rfbEncodingUltra2] = true;
+#ifdef _XZ
+	m_UseEnc[rfbEncodingXZ] = true;
+	m_UseEnc[rfbEncodingXZYW] = true;
+#endif
+	m_UseEnc[rfbEncodingZstd] = true;
+	m_UseEnc[rfbEncodingTightZstd] = true;
+	m_UseEnc[rfbEncodingZstdHex] = true;
+	m_UseEnc[rfbEncodingZSTDRLE] = false;
+	m_UseEnc[rfbEncodingZSTDYWRLE] = true;
+
+	m_ViewOnly = false;
+	m_FullScreen = false;
+	m_SavePos = false;
+	m_SaveSize = false;
+	m_GNOME = false;
+	m_Directx = false;
+	m_cmdDirectx = false;
+	autoDetect = false;
+	m_Use8Bit = rfbPFFullColors; //false;
+	m_ShowToolbar = true;
+	m_fAutoScaling = false;
+	m_fAutoScalingEven = false;
+	m_fAutoScalingLimit = false;
+	m_NoStatus = false;
+	m_NoHotKeys = false;
+	m_FullScreen = false;
+	_tcscpy_s(m_language, _countof(m_language), _T("en")); // Default to English
+	m_PreferredEncodings.push_back(rfbEncodingUltra2);
+	m_JapKeyboard = false;
+	m_SwapMouse = false;
+	m_BlockSameMouse = false;
+	m_Emul3Buttons = true;
+	m_Emul3Timeout = 100; // milliseconds
+	m_Emul3Fuzz = 4;      // pixels away before emulation is cancelled
+	m_Shared = true;
+	m_NoBorder = false;
+	m_DeiconifyOnBell = false;
+	m_DisableClipboard = false;
+	m_localCursor = DOTCURSOR; // NOCURSOR;
+	m_scaling = false;
+	m_fAutoScaling = false;
+	m_fAutoScalingEven = false;
+	m_fAutoScalingLimit = false;
+	m_scale_num = 100;
+	m_scale_den = 100;
+	// Modif sf@2002 - Server Scaling
+	m_nServerScale = 1;
+	m_reconnectcounter = 3;
+	m_x = 0;
+	m_y = 0;
+	m_w = 0;
+	m_h = 0;
+	// Modif sf@2002 - Cache
+	m_fEnableCache = false;
+	m_fEnableZstd = true;
+	// m_fAutoAdjust = false;
+	m_host_options[0] = '\0';
+	m_proxyhost[0] = '\0';
+	m_port = -1;
+	m_proxyport = -1;
+	m_kbdname[0] = '\0';
+	m_kbdSpecified = false;
+	m_logLevel = 0;
+	m_logToConsole = false;
+	m_logToFile = false;
+	m_logFilename[0] = '\0';
+	m_ClassName[0] = '\0';
+	m_delay = 0;
+	m_connectionSpecified = false;
+	m_configSpecified = false;
+	m_configFilename[0] = '\0';
+	m_listening = false;
+	m_listenPort = INCOMING_PORT_OFFSET;
+	m_restricted = false;
+	m_ipv6 = false;
+	m_AllowUntrustedServers = false;
+	// Tight specific
+	m_useCompressLevel = true;
+	m_compressLevel = 6;
+	m_enableJpegCompression = true;
+	m_jpegQualityLevel = 8;
+	m_requestShapeUpdates = true;
+	m_ignoreShapeUpdates = false;
+	m_cmdlnUser[0] = '\0';		// act : add user option on command line
+	m_clearPassword[0] = '\0';		// sf@2002
+	m_quickoption = 1;				// sf@2002 - Auto Mode as default
+	m_fUseDSMPlugin = false;
+	m_oldplugin = false;
+	//g_disable_sponsor= false;
+	m_connectionType = DIRECT_TCP;
+	m_allowMonitorSpanning = 0;
+	m_ChangeServerRes = 0;
+	m_extendDisplay = 0;
+	m_showExtend = 0;
+	m_use_virt = 0;
+	m_useAllMonitors = 0;
+	m_requestedWidth = 0;
+	m_requestedHeight = 0;
+
+	m_szDSMPluginFilename[0] = '\0';
+	setDefaultDocumentPath();
+	_tcscpy_s(m_prefix, _countof(m_prefix), _T("ultravnc_"));
+	_tcscpy_s(m_imageFormat, _countof(m_imageFormat), _T(".jpeg"));
+
+#ifdef _Gii
+	m_giiEnable = false;
+#endif
+
+	m_fAutoAcceptIncoming = false;
+	m_fAutoAcceptNoDSM = false;
+	m_fRequireEncryption = false;
+	m_UseOnlyDefaultConfigFile = true;
+	m_preemptiveUpdates = true;
+	m_szUploadLocal[0] = L'\0';
+	m_szUploadRemote[0] = L'\0';
+	m_saved_scale_num = 100;
+	m_saved_scale_den = 100;
+	m_saved_scaling = false;
+
+	m_autoReconnect = 3; // Default: 10s before reconnecting
+
+	m_NoMoreCommandLineUserPassword = false;
+	m_fExitCheck = false; //PGM @ Advantig
+	hwnd = 0;
+	m_FTTimeout = FT_RECV_TIMEOUT;
+	m_keepAliveInterval = KEEPALIVE_INTERVAL;
+	m_IdleInterval = 0;
+	m_throttleMouse = 0; // adzm 2010-10
+	
+	m_HideEndOfStreamError = false;
+	
+	setDefaultOptionsFileName(m_optionfile);
+	LoadOptions(getDefaultOptionsFileName());
+}
+
+void VNCOptions::setDefaultOptionsFileName(wchar_t* optionfile)
+{
+	TCHAR szFileName[MAX_PATH];
+	if (GetModuleFileNameW(NULL, szFileName, MAX_PATH)) {
+		TCHAR* p = wcsrchr(szFileName, L'\\');
+		if (p == NULL) return;
+		*p = L'\0';
+		wcscat_s(szFileName, _countof(szFileName), L"\\options.vnc");
+	}
+	HANDLE m_hDestFile = CreateFileW(szFileName, GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+	bool fAlreadyExists = (GetLastError() == ERROR_ALREADY_EXISTS);
+	if (fAlreadyExists) {
+		CloseHandle(m_hDestFile);
+		m_hDestFile = CreateFileW(szFileName, GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+	}
+	if (m_hDestFile != INVALID_HANDLE_VALUE) {
+		_tcscpy_s(optionfile, MAX_PATH, szFileName);
+		CloseHandle(m_hDestFile);
+		return;
+	}
+	const TCHAR* APPDIR = _T("UltraVNC");
+	if (SHGetFolderPathW(0, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, optionfile) == S_OK) {
+		wcscat_s(optionfile, MAX_PATH, L"\\");
+		wcscat_s(optionfile, MAX_PATH, APPDIR);
+		struct _stat st;
+		if (_wstat(optionfile, &st) == -1)
+			_wmkdir(optionfile);
+	}
+	else {
+		wchar_t* tempvar = _wgetenv(L"TEMP");
+		if (tempvar)
+			_tcscpy_s(optionfile, MAX_PATH, tempvar);
+		else
+			_tcscpy_s(optionfile, MAX_PATH, _T(""));
+	}
+	wcscat_s(optionfile, MAX_PATH, L"\\options.vnc");
+}
+
+TCHAR* VNCOptions::getDefaultOptionsFileName()
+{
+	return m_optionfile;
+}
+
+void VNCOptions::setDefaultDocumentPath()
+{
+	const TCHAR* APPDIR = _T("UltraVNC");
+	if (SHGetFolderPathW(0, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, m_document_folder) == S_OK) {
+		wcscat_s(m_document_folder, MAX_PATH, L"\\");
+		wcscat_s(m_document_folder, MAX_PATH, APPDIR);
+
+	}
+	else {
+		wchar_t* tempvar = _wgetenv(L"TEMP");
+		if (tempvar)
+			_tcscpy_s(m_document_folder, MAX_PATH, tempvar);
+		else
+			_tcscpy_s(m_document_folder, MAX_PATH, _T(""));
+	}
+}
+
+VNCOptions& VNCOptions::operator=(VNCOptions& s)
+{
+	if (&s == this) {
+		return *this;
+	}
+
+	for (int i = rfbEncodingRaw; i <= LASTENCODING; i++)
+		m_UseEnc[i] = s.m_UseEnc[i];
+
+	m_ViewOnly = s.m_ViewOnly;
+	m_NoStatus = s.m_NoStatus;
+	m_FullScreen = s.m_FullScreen;
+	m_SavePos = s.m_SavePos;
+	m_SaveSize = s.m_SaveSize;
+	m_GNOME = s.m_GNOME;
+	m_Directx = s.m_Directx;
+	m_cmdDirectx = s.m_cmdDirectx;
+	autoDetect = s.autoDetect;
+	m_Use8Bit = s.m_Use8Bit;
+	m_PreferredEncodings = s.m_PreferredEncodings;
+	m_SwapMouse = s.m_SwapMouse;
+	m_BlockSameMouse = s.m_BlockSameMouse;
+	m_Emul3Buttons = s.m_Emul3Buttons;
+	m_Emul3Timeout = s.m_Emul3Timeout;
+	m_Emul3Fuzz = s.m_Emul3Fuzz;      // pixels away before emulation is cancelled
+	m_Shared = s.m_Shared;
+	m_NoBorder = s.m_NoBorder;
+	m_DeiconifyOnBell = s.m_DeiconifyOnBell;
+	m_DisableClipboard = s.m_DisableClipboard;
+	m_scaling = s.m_scaling;
+	m_fAutoScaling = s.m_fAutoScaling;
+	m_fAutoScalingEven = s.m_fAutoScalingEven;
+	m_fAutoScalingLimit = s.m_fAutoScalingLimit;
+	m_scale_num = s.m_scale_num;
+	m_scale_den = s.m_scale_den;
+	m_localCursor = s.m_localCursor;
+	// Modif sf@2002
+	m_nServerScale = s.m_nServerScale;
+	m_fEnableCache = s.m_fEnableCache;
+	m_fEnableZstd = s.m_fEnableZstd;
+	m_quickoption = s.m_quickoption;
+	m_ShowToolbar = s.m_ShowToolbar;
+	m_fUseDSMPlugin = s.m_fUseDSMPlugin;
+	m_NoHotKeys = s.m_NoHotKeys;
+
+	// sf@2003 - Autoscaling
+	m_saved_scale_num = s.m_saved_scale_num;
+	m_saved_scale_den = s.m_saved_scale_den;
+	m_saved_scaling = s.m_saved_scaling;
+
+	_tcscpy_s(m_szDSMPluginFilename, 260, s.m_szDSMPluginFilename);
+	_tcscpy_s(m_document_folder, MAX_PATH, s.m_document_folder);
+	_tcscpy_s(m_prefix, 56, s.m_prefix);
+	_tcscpy_s(m_imageFormat, 56, s.m_imageFormat);
+
+	_tcscpy_s(m_host_options, MAX_HOST_NAME_LEN, s.m_host_options);
+	m_port = s.m_port;
+
+	_tcscpy_s(m_proxyhost, MAX_HOST_NAME_LEN, s.m_proxyhost);
+	m_proxyport = s.m_proxyport;
+	m_connectionType = s.m_connectionType;
+	m_allowMonitorSpanning = s.m_allowMonitorSpanning;
+	m_ChangeServerRes = s.m_ChangeServerRes;
+	m_extendDisplay = s.m_extendDisplay;
+	m_showExtend = s.m_showExtend;
+	m_use_virt = s.m_use_virt;
+	m_useAllMonitors = s.m_useAllMonitors;
+	m_requestedWidth = s.m_requestedWidth;
+	m_requestedHeight = s.m_requestedHeight;
+
+	m_x = s.m_x;
+	m_y = s.m_y;
+	m_w = s.m_w;
+	m_h = s.m_h;
+
+	_tcscpy_s(m_kbdname, 9, s.m_kbdname);
+	m_kbdSpecified = s.m_kbdSpecified;
+
+	m_logLevel = s.m_logLevel;
+	m_logToConsole = s.m_logToConsole;
+	m_logToFile = s.m_logToFile;
+	_tcscpy_s(m_logFilename, 260, s.m_logFilename);
+
+	m_delay = s.m_delay;
+	m_connectionSpecified = s.m_connectionSpecified;
+	m_configSpecified = s.m_configSpecified;
+	_tcscpy_s(m_configFilename, 260, s.m_configFilename);
+
+	m_listening = s.m_listening;
+	m_listenPort = s.m_listenPort;
+	m_restricted = s.m_restricted;
+	m_ipv6 = s.m_ipv6;
+	m_AllowUntrustedServers = s.m_AllowUntrustedServers;
+
+	// Tight specific
+	m_useCompressLevel = s.m_useCompressLevel;
+	m_compressLevel = s.m_compressLevel;
+	m_enableJpegCompression = s.m_enableJpegCompression;
+	m_jpegQualityLevel = s.m_jpegQualityLevel;
+	m_requestShapeUpdates = s.m_requestShapeUpdates;
+	m_ignoreShapeUpdates = s.m_ignoreShapeUpdates;
+
+	// sf@2007 - Autoreconnect
+	m_autoReconnect = s.m_autoReconnect;
+	m_JapKeyboard = s.m_JapKeyboard;
+
+	m_fExitCheck = s.m_fExitCheck; //PGM @ Advantig
+	m_FTTimeout = s.m_FTTimeout;
+	m_keepAliveInterval = s.m_keepAliveInterval;
+	m_IdleInterval = s.m_IdleInterval;
+
+	m_throttleMouse = s.m_throttleMouse; // adzm 2010-10
+
+#ifdef _Gii
+	m_giiEnable = s.m_giiEnable;
+#endif
+	m_fAutoAcceptIncoming = true;
+	//adzm 2009-06-21
+	m_fAutoAcceptIncoming = s.m_fAutoAcceptIncoming;
+
+	//adzm 2009-07-19
+	m_fAutoAcceptNoDSM = s.m_fAutoAcceptNoDSM;
+
+	//adzm 2010-05-12
+	m_fRequireEncryption = s.m_fRequireEncryption;
+	m_UseOnlyDefaultConfigFile = s.m_UseOnlyDefaultConfigFile;
+
+	//adzm 2010-07-04
+	m_preemptiveUpdates = s.m_preemptiveUpdates;
+	wcscpy_s(m_szUploadLocal, s.m_szUploadLocal);
+	wcscpy_s(m_szUploadRemote, s.m_szUploadRemote);
+
+	return *this;
+}
+
+VNCOptions::~VNCOptions()
+{
+}
+
+static void ArgError(LPTSTR msg) {
+	yesUVNCMessageBox(m_hInstResDLL, NULL, msg, sz_D1, MB_ICONSTOP);
+}
+
+// Greatest common denominator, by Euclid
+int gcd(int a, int b) {
+	if (a < b) return gcd(b, a);
+	if (b == 0) return a;
+	return gcd(b, a % b);
+}
+
+void VNCOptions::FixScaling()
+{
+	if (m_scale_num < 1 || m_scale_den < 1 || m_scale_num > 400 || m_scale_den > 100)
+	{
+		yesUVNCMessageBox(m_hInstResDLL, NULL, sz_D2,sz_D1,  MB_ICONWARNING);
+		m_scale_num = 1;
+		m_scale_den = 1;
+		m_scaling = false;
+	}
+	int g = gcd(m_scale_num, m_scale_den);
+	m_scale_num /= g;
+	m_scale_den /= g;
+
+	// Modif sf@2002 - Server Scaling
+	if (m_nServerScale < 1 || m_nServerScale > 9) m_nServerScale = 1;
+}
+
+void VNCOptions::SetFromCommandLine(LPTSTR szCmdLine) {
+	// We assume no quoting here.
+	// Copy the command line - we don't know what might happen to the original
+	_tcscpy_s(this->szCmdLine, _countof(this->szCmdLine), szCmdLine);
+	config_specified = false;
+	int cmdlinelen = _tcslen(szCmdLine);
+	if (cmdlinelen == 0) return;
+
+	TCHAR* cmd = new TCHAR[cmdlinelen + 1];
+	_tcscpy_s(cmd, cmdlinelen + 1, szCmdLine);
+
+	// Count the number of spaces
+	// This may be more than the number of arguments, but that doesn't matter.
+	int nspaces = 0;
+	TCHAR* p = cmd;
+	TCHAR* pos = cmd;
+	while ((pos = _tcschr(p, ' ')) != NULL) {
+		nspaces++;
+		p = pos + 1;
+	}
+
+	// Create the array to hold pointers to each bit of string
+	TCHAR** args = new LPTSTR[nspaces + 1];
+
+	// replace spaces with nulls and
+	// create an array of TCHAR*'s which points to start of each bit.
+	pos = cmd;
+	int i = 0;
+	args[i] = cmd;
+	bool inquote = false;
+	for (pos = cmd; *pos != 0; pos++) {
+		// Handle escaped quote: \" -> literal "
+		if (*pos == '\\' && *(pos + 1) == '"') {
+			memmove(pos, pos + 1, _tcslen(pos + 1) + 1);
+			continue;
+		}
+		// Arguments are normally separated by spaces, unless there's quoting
+		if ((*pos == ' ') && !inquote) {
+			*pos = '\0';
+			p = pos + 1;
+			args[++i] = p;
+		}
+		if (*pos == '"') {
+			if (!inquote) {      // Are we starting a quoted argument?
+				args[i] = ++pos; // It starts just after the quote
+			}
+			else {
+				*pos = '\0';     // Finish a quoted argument?
+			}
+			inquote = !inquote;
+		}
+	}
+	i++;
+
+	bool hostGiven = false, portGiven = false;
+	// take in order.
+	for (int j = 0; j < i; j++) {
+		if (SwitchMatch(args[j], _T("help")) ||
+			SwitchMatch(args[j], _T("?")) ||
+			SwitchMatch(args[j], _T("h")))
+		{
+			m_NoStatus = true;
+			ShowUsage();
+			exit(1);
+		}
+		else if (SwitchMatch(args[j], _T("listen")))
+		{
+			m_listening = true;
+			if (j + 1 < i && args[j + 1][0] >= '0' && args[j + 1][0] <= '9') {
+				if (_stscanf_s(args[j + 1], _T("%d"), &m_listenPort) != 1) {
+					ArgError(sz_D3);
+					continue;
+				}
+				j++;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("fttimeout"))) { //PGM @ Advantig
+			if (j + 1 < i && args[j + 1][0] >= '0' && args[j + 1][0] <= '9') {
+				if (_stscanf_s(args[j + 1], _T("%d"), &m_FTTimeout) != 1) {
+					ArgError(sz_D3);
+					continue;
+				}
+				if (m_FTTimeout > 600)
+					m_FTTimeout = 600;
+				j++;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("keepalive"))) { //PGM @ Advantig
+			if (j + 1 < i && args[j + 1][0] >= '0' && args[j + 1][0] <= '9') {
+				if (_stscanf_s(args[j + 1], _T("%d"), &m_keepAliveInterval) != 1) {
+					ArgError(sz_D3);
+					continue;
+				}
+				if (m_keepAliveInterval >= (m_FTTimeout - KEEPALIVE_HEADROOM))
+					m_keepAliveInterval = (m_FTTimeout - KEEPALIVE_HEADROOM);
+				j++;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("socketkeepalivetimeout"))) { // adzm 2010-08
+			if (j + 1 < i && args[j + 1][0] >= '0' && args[j + 1][0] <= '9') {
+				int m_socketKeepAliveTimeout;
+				if (_stscanf_s(args[j + 1], _T("%d"), &m_socketKeepAliveTimeout) != 1) {
+					ArgError(sz_D3);
+					continue;
+				}
+				j++;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("askexit"))) { //PGM @ Advantig
+			m_fExitCheck = true; //PGM @ Advantig
+		}
+		else if (SwitchMatch(args[j], _T("restricted"))) {
+			m_restricted = true;
+		}
+		else if (SwitchMatch(args[j], _T("ipv6"))) {
+			m_ipv6 = true;
+		}
+		else if (SwitchMatch(args[j], _T("AllowUntrustedServers"))) {
+			m_AllowUntrustedServers = true;
+		}		
+		else if (SwitchMatch(args[j], _T("viewonly"))) {
+			m_ViewOnly = true;
+		}
+		else if (SwitchMatch(args[j], _T("nostatus"))) {
+			m_NoStatus = true;
+		}
+		else if (SwitchMatch(args[j], _T("hideendofstreamerror"))) {
+			m_HideEndOfStreamError = true;
+		}
+		else if (SwitchMatch(args[j], _T("nohotkeys"))) {
+			m_NoHotKeys = true;
+		}
+		else if (SwitchMatch(args[j], _T("notoolbar"))) {
+			m_ShowToolbar = false;
+		}
+		else if (SwitchMatch(args[j], _T("autoscaling"))) {
+			m_fAutoScaling = true;
+		}
+		else if (SwitchMatch(args[j], _T("fullscreen"))) {
+			m_FullScreen = true;
+			m_ShowToolbar = false;
+		}
+		else if (SwitchMatch(args[j], _T("savepos"))) {
+			m_SavePos = true;
+		}
+		else if (SwitchMatch(args[j], _T("savesize"))) {
+			m_SaveSize = true;
+		}
+		else if (SwitchMatch(args[j], _T("gnome"))) {
+			m_GNOME = true;
+		}
+		else if (SwitchMatch(args[j], _T("directx"))) {
+			m_Directx = true;
+			m_cmdDirectx = true;
+		}
+		else if (SwitchMatch(args[j], _T("noauto"))) {
+			autoDetect = false;
+			m_quickoption = 0;
+		}
+		else if (SwitchMatch(args[j], _T("8bit"))) {
+			m_Use8Bit = rfbPF256Colors; //true;
+		}
+		else if (SwitchMatch(args[j], _T("256colors"))) {
+			m_Use8Bit = rfbPF256Colors; //true;
+		}
+		else if (SwitchMatch(args[j], _T("fullcolors"))) {
+			m_Use8Bit = rfbPFFullColors;
+		}
+		else if (SwitchMatch(args[j], _T("64colors"))) {
+			m_Use8Bit = rfbPF64Colors;
+		}
+		else if (SwitchMatch(args[j], _T("8colors"))) {
+			m_Use8Bit = rfbPF8Colors;
+		}
+		else if (SwitchMatch(args[j], _T("8greycolors"))) {
+			m_Use8Bit = rfbPF8GreyColors;
+		}
+		else if (SwitchMatch(args[j], _T("4greycolors"))) {
+			m_Use8Bit = rfbPF4GreyColors;
+		}
+		else if (SwitchMatch(args[j], _T("2greycolors"))) {
+			m_Use8Bit = rfbPF2GreyColors;
+		}
+		else if (SwitchMatch(args[j], _T("shared"))) {
+			m_Shared = true;
+		}
+		else if (SwitchMatch(args[j], _T("swapmouse"))) {
+			m_SwapMouse = true;
+		}
+		else if (SwitchMatch(args[j], _T("nocursor"))) {
+			m_localCursor = NOCURSOR;
+		}
+		else if (SwitchMatch(args[j], _T("dotcursor"))) {
+			m_localCursor = DOTCURSOR;
+		}
+		else if (SwitchMatch(args[j], _T("normalcursor"))) {
+			m_localCursor = NORMALCURSOR;
+		}
+		else if (SwitchMatch(args[j], _T("belldeiconify"))) {
+			m_DeiconifyOnBell = true;
+		}
+		else if (SwitchMatch(args[j], _T("emulate3"))) {
+			m_Emul3Buttons = true;
+		}
+		else if (SwitchMatch(args[j], _T("JapKeyboard"))) {
+			m_JapKeyboard = true;
+		}
+		else if (SwitchMatch(args[j], _T("noemulate3"))) {
+			m_Emul3Buttons = false;
+		}
+		else if (SwitchMatch(args[j], _T("nocursorshape"))) {
+			m_requestShapeUpdates = false;
+		}
+		else if (SwitchMatch(args[j], _T("noremotecursor"))) {
+			m_requestShapeUpdates = true;
+			m_ignoreShapeUpdates = true;
+		}
+		else if (SwitchMatch(args[j], _T("scale"))) {
+			if (++j == i) {
+				ArgError(sz_D4);
+				continue;
+			}
+			int numscales = _stscanf_s(args[j], _T("%d/%d"), &m_scale_num, &m_scale_den);
+			if (numscales < 1) {
+				ArgError(sz_D5);
+				continue;
+			}
+			if (numscales == 1)
+				m_scale_den = 1; // needed if you're overriding a previous setting
+		}
+		else if (SwitchMatch(args[j], _T("emulate3timeout"))) {
+			if (++j == i) {
+				ArgError(sz_D6);
+				continue;
+			}
+			if (_stscanf_s(args[j], _T("%d"), &m_Emul3Timeout) != 1) {
+				ArgError(sz_D7);
+				continue;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("emulate3fuzz"))) {
+			if (++j == i) {
+				ArgError(sz_D8);
+				continue;
+			}
+			if (_stscanf_s(args[j], _T("%d"), &m_Emul3Fuzz) != 1) {
+				ArgError(sz_D9);
+				continue;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("disableclipboard"))) {
+			m_DisableClipboard = true;
+		}
+		else if (SwitchMatch(args[j], _T("delay"))) {
+			if (++j == i) {
+				ArgError(sz_D10);
+				continue;
+			}
+			if (_stscanf_s(args[j], _T("%d"), &m_delay) != 1) {
+				ArgError(sz_D11);
+				continue;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("loglevel"))) {
+			if (++j == i) {
+				ArgError(sz_D12);
+				continue;
+			}
+			if (_stscanf_s(args[j], _T("%d"), &m_logLevel) != 1) {
+				ArgError(sz_D13);
+				continue;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("console"))) {
+			m_logToConsole = true;
+		}
+		else if (SwitchMatch(args[j], _T("logfile"))) {
+			if (++j == i) {
+				ArgError(sz_D14);
+				continue;
+			}
+			if (args[j][0] == '\0') {
+				ArgError(sz_D15);
+				continue;
+			}
+			_tcscpy_s(m_logFilename, _countof(m_logFilename), args[j]);
+			m_logToFile = true;
+		}
+		else if (SwitchMatch(args[j], _T("config"))) {
+			if (++j == i) {
+				ArgError(sz_D16);
+				continue;
+			}
+			else
+			{
+				config_specified = true;
+			}
+			// The GetPrivateProfile* stuff seems not to like some relative paths
+			_wfullpath(m_configFilename, args[j], _MAX_PATH);
+			if (_waccess(m_configFilename, 04)) {
+				ArgError(sz_D17);
+				PostQuitMessage(1);
+				continue;
+			}
+			else {
+				LoadOptions(m_configFilename);
+				if (m_cmdDirectx) m_Directx = true;
+				m_configSpecified = true;
+			}
+		}
+
+		else if (SwitchMatch(args[j], _T("InfoMsg"))) {
+			if (++j == i) {
+				ArgError(_T("No InfoMsg"));
+			continue;
+		}
+		_tcscpy_s(m_InfoMsg, _countof(m_InfoMsg), args[j]);
+		}
+
+		else if (SwitchMatch(args[j], _T("register"))) {
+			//      Register();
+			PostQuitMessage(0);
+		}
+		else if (SwitchMatch(args[j], _T("encoding"))) {
+			if (++j == i) {
+				ArgError(sz_D18);
+				continue;
+			}
+			int enc = EncodingFromString(args[j]);
+			if (enc == -1) {
+				ArgError(sz_D19);
+				continue;
+			}
+			else {
+				m_PreferredEncodings.clear();
+				m_PreferredEncodings.push_back(enc);
+				m_UseEnc[enc] = true;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("encodings"))) {
+			if (++j == i) {
+				ArgError(sz_D18);
+				continue;
+			}
+			int encodings_found = 0;
+			while (encodings_found >= 0) {
+				int enc = EncodingFromString(args[j]);
+				if (enc == -1) {
+					if (encodings_found == 0) {
+						ArgError(sz_D19);
+					}
+					else {
+						j--;
+					}
+					encodings_found = -1;
+				}
+				else {
+					if (encodings_found == 0) {
+						m_PreferredEncodings.clear();
+					}
+					m_UseEnc[enc] = true;
+					if (m_PreferredEncodings.end() == std::find(m_PreferredEncodings.begin(), m_PreferredEncodings.end(), enc)) {
+						m_PreferredEncodings.push_back(enc);
+					}
+					encodings_found++;
+
+					j++;
+
+					if (j == i) {
+						encodings_found = -1;
+					}
+				}
+			}
+		}
+		// Tight options
+		else if (SwitchMatch(args[j], _T("compresslevel"))) {
+			if (++j == i) {
+				ArgError(sz_D20);
+				continue;
+			}
+			m_useCompressLevel = true;
+			if (_stscanf_s(args[j], _T("%d"), &m_compressLevel) != 1) {
+				ArgError(sz_D21);
+				continue;
+			}
+		}
+		else if (SwitchMatch(args[j], _T("quality"))) {
+			if (++j == i) {
+				ArgError(sz_D22);
+				continue;
+			}
+			m_enableJpegCompression = true;
+			if (_stscanf_s(args[j], _T("%d"), &m_jpegQualityLevel) != 1) {
+				ArgError(sz_D23);
+				continue;
+			}
+		}
+		// act : add user option on command line
+		else if (SwitchMatch(args[j], _T("user")))
+		{
+			if (++j == i)
+			{
+				ArgError(sz_D24);
+				continue;
+			}
+			WideCharToMultiByte(CP_UTF8, 0, args[j], -1, m_cmdlnUser, _countof(m_cmdlnUser), NULL, NULL);
+		} // act : add user option on command line
+		// Modif sf@2002 : password in the command line
+		else if (SwitchMatch(args[j], _T("password")))
+		{
+			if (++j == i)
+			{
+				ArgError(sz_D24);
+				continue;
+			}
+			WideCharToMultiByte(CP_ACP, 0, args[j], -1, m_clearPassword, _countof(m_clearPassword), NULL, NULL);
+		} // Modif sf@2002
+		else if (SwitchMatch(args[j], _T("serverscale")))
+		{
+			if (++j == i)
+			{
+				ArgError(sz_D25);
+				continue;
+			}
+			_stscanf_s(args[j], _T("%d"), &m_nServerScale);
+			if (m_nServerScale < 1 || m_nServerScale > 9) m_nServerScale = 1;
+		}
+		// Modif sf@2002
+		else if (SwitchMatch(args[j], _T("quickoption")))
+		{
+			if (++j == i)
+			{
+				ArgError(sz_D26);
+				continue;
+			}
+			_stscanf_s(args[j], _T("%d"), &m_quickoption);
+		}
+		// Modif sf@2002 - DSM Plugin
+		else if (SwitchMatch(args[j], _T("dsmplugin")))
+		{
+			if (++j == i)
+			{
+				ArgError(sz_D27);
+				continue;
+			}
+			m_fUseDSMPlugin = true;
+			_tcscpy_s(m_szDSMPluginFilename, _countof(m_szDSMPluginFilename), args[j]);
+		}
+		else if (SwitchMatch(args[j], _T("proxy")))
+		{
+			if (++j == i)
+			{
+				ArgError(sz_D27); // sf@ - Todo: put correct message here
+				continue;
+			}
+			m_connectionType = REPEATER_SERVER;
+			_tcscpy_s(m_proxyhost, _countof(m_proxyhost), args[j]);
+			//adzm 2010-02-15
+			CheckProxyAndHost();
+		}
+		else if (SwitchMatch(args[j], _T("reconnectcounter")))
+		{
+			if (++j == i) {
+				ArgError(_T("You must specify a reconnect counter number"));
+				PostQuitMessage(1);
+				continue;
+			}
+			_stscanf_s(args[j], _T("%d"), &m_reconnectcounter);
+		}
+
+		else if (SwitchMatch(args[j], _T("position")))
+		{
+			j = j + 4;
+			if (j == i) {
+				ArgError(_T("You must specify x y w y"));
+				PostQuitMessage(1);
+				continue;
+			}
+			_stscanf_s(args[j - 3], _T("%d"), &m_x);
+			_stscanf_s(args[j - 2], _T("%d"), &m_y);
+			_stscanf_s(args[j - 1], _T("%d"), &m_w);
+			_stscanf_s(args[j], _T("%d"), &m_h);
+			int a = 0;
+		}
+		else if (SwitchMatch(args[j], _T("noborder"))) {
+			m_NoBorder = true;
+		}
+
+		else if (SwitchMatch(args[j], _T("autoreconnect")))
+		{
+			if (++j == i) {
+				ArgError(_T("You must specify an autoreconnect delay (default is 10s)"));
+				PostQuitMessage(1);
+				continue;
+			}
+			_stscanf_s(args[j], _T("%d"), &m_autoReconnect);
+		}
+		else if (SwitchMatch(args[j], _T("disablesponsor")))
+		{
+			//adzm - 2009-06-21
+			g_disable_sponsor = true;
+		}
+		else if (SwitchMatch(args[j], _T("autoacceptincoming")))
+		{
+			//adzm - 2009-06-21
+			m_fAutoAcceptIncoming = true;
+		}
+#ifdef _Gii
+		else if (SwitchMatch(args[j], _T("giienable")))
+		{
+			m_giiEnable = true;
+		}
+#endif
+		else if (SwitchMatch(args[j], _T("autoacceptnodsm")))
+		{
+			//adzm 2009-07-19
+			m_fAutoAcceptNoDSM = true;
+		}
+		else if (SwitchMatch(args[j], _T("requireencryption")))
+		{
+			//adzm 2010-05-12
+			m_fRequireEncryption = true;
+		}
+		else if (SwitchMatch(args[j], _T("preemptiveupdates")))
+		{
+			//adzm 2010-07-04
+			m_preemptiveUpdates = true;
+		}
+		else if (SwitchMatch(args[j], _T("uploadlocal")))
+		{
+			if (++j == i) {
+				ArgError(_T("No local path specified for -uploadlocal"));
+				continue;
+			}
+			wcscpy_s(m_szUploadLocal, _countof(m_szUploadLocal), args[j]);
+		}
+		else if (SwitchMatch(args[j], _T("uploadremote")))
+		{
+			if (++j == i) {
+				ArgError(_T("No remote path specified for -uploadremote"));
+				continue;
+			}
+			wcscpy_s(m_szUploadRemote, _countof(m_szUploadRemote), args[j]);
+		}
+		else if (SwitchMatch(args[j], _T("enablecache")))
+		{
+			//adzm 2010-08
+			m_fEnableCache = true;
+		}
+		else if (SwitchMatch(args[j], _T("classname")))
+		{
+			if (++j == i) {
+				ArgError(_T("No classname"));
+			continue;
+			}
+			_tcscpy_s(m_ClassName, _countof(m_ClassName), args[j]);
+		}
+		else if (SwitchMatch(args[j], _T("throttlemouse")))
+		{
+			//adzm 2010-10
+			if (++j == i) {
+				ArgError(sz_D22);
+				continue;
+			}
+			if (_stscanf_s(args[j], _T("%d"), &m_throttleMouse) != 1) {
+				ArgError(sz_D23);
+				continue;
+			}
+		}
+		else
+		{
+			if (j == 0 && (GetFileAttributesW(args[j]) != INVALID_FILE_ATTRIBUTES)
+				&& !(GetFileAttributesW(args[j]) & FILE_ATTRIBUTE_DIRECTORY)) {
+				// The GetPrivateProfile* stuff seems not to like some relative paths
+				_wfullpath(m_configFilename, args[j], _MAX_PATH);
+				if (_waccess(m_configFilename, 04)) {
+					ArgError(sz_D17);
+					PostQuitMessage(1);
+					continue;
+				}
+				else {
+					LoadOptions(m_configFilename);
+					if (m_cmdDirectx) m_Directx = true;
+					m_configSpecified = true;
+				}
+			}
+			else {
+				TCHAR phost[MAX_HOST_NAME_LEN];
+				if (!ParseDisplay(args[j], phost, MAX_HOST_NAME_LEN, &m_port)) {
+					ShowUsage(sz_D28);
+					PostQuitMessage(1);
+				}
+				else {
+					for (size_t l_i = 0, len = _tcslen(phost); l_i < len; l_i++) {
+						phost[l_i] = _totupper(phost[l_i]);
+					}
+					_tcscpy_s(m_host_options, _countof(m_host_options), phost);
+					//adzm 2010-02-15
+					CheckProxyAndHost();
+					m_connectionSpecified = true;
+				}
+			}
+		}
+	}
+
+	if (m_scale_num != 1 || m_scale_den != 1)
+		m_scaling = true;
+
+	// reduce scaling factors by greatest common denominator
+	if (m_scaling) {
+		FixScaling();
+	}
+	// tidy up
+	delete[] cmd;
+	delete[] args;
+}
+
+//adzm 2010-02-15
+void VNCOptions::CheckProxyAndHost()
+{
+	if (_tcslen(m_proxyhost) > 0) {
+		TCHAR actualProxy[MAX_HOST_NAME_LEN];
+		_tcscpy_s(actualProxy, _countof(actualProxy), m_proxyhost);
+
+		if (_tcslen(m_host_options) > 0) {
+			if (_tcsncmp(m_host_options, _T("ID"), 2) == 0) {
+				int numericId = m_port;
+
+				int numberOfHosts = 1;
+				for (size_t i = 0; i < _tcslen(m_proxyhost); i++) {
+					if (m_proxyhost[i] == _T(';')) {
+						numberOfHosts++;
+					}
+				}
+
+				if (numberOfHosts <= 1) {
+					// then hostname == actualhostname
+				}
+				else {
+					int modulo = numericId % numberOfHosts;
+
+					TCHAR* szToken = _tcstok(m_proxyhost, _T(";"));
+					while (szToken) {
+						if (modulo == 0) {
+							_tcscpy_s(actualProxy, _countof(actualProxy), szToken);
+							break;
+						}
+
+						modulo--;
+						szToken = _tcstok(NULL, _T(";"));
+					}
+				}
+			}
+
+			if (!ParseDisplay(actualProxy, m_proxyhost, MAX_HOST_NAME_LEN, &m_proxyport)) {
+				ShowUsage(sz_D28);
+				PostQuitMessage(1);
+			}
+		}
+	}
+}
+
+void saveInt(const wchar_t* name, int value, const wchar_t* fname)
+{
+	wchar_t buf[10];
+	swprintf_s(buf, 10, L"%d", value);
+	WritePrivateProfileStringW(L"options", name, buf, fname);
+}
+
+int readInt(const wchar_t* name, int defval, const wchar_t* fname)
+{
+	return GetPrivateProfileIntW(L"options", name, defval, fname);
+}
+
+int readInt(const char* name, int defval, const char* fname)
+{
+	return GetPrivateProfileIntA("options", name, defval, fname);
+}
+
+void VNCOptions::SaveOptions(const wchar_t* fname)
+{
+	for (int i = rfbEncodingRaw; i <= LASTENCODING; i++) {
+		wchar_t buf[128];
+		swprintf_s(buf, 128, L"use_encoding_%d", i);
+		saveInt(buf, m_UseEnc[i], fname);
+	}
+	if (!m_PreferredEncodings.empty()) {
+		saveInt(L"preferred_encoding", m_PreferredEncodings[0], fname);
+	}
+	saveInt(L"restricted", m_restricted, fname);
+	saveInt(L"ipv6", m_ipv6, fname);
+	saveInt(L"AllowUntrustedServers", m_AllowUntrustedServers, fname);
+	saveInt(L"viewonly", m_ViewOnly, fname);
+	saveInt(L"nostatus", m_NoStatus, fname);
+	saveInt(L"HideEOStreamError", m_HideEndOfStreamError, fname);
+	saveInt(L"nohotkeys", m_NoHotKeys, fname);
+	saveInt(L"showtoolbar", m_ShowToolbar, fname);
+	saveInt(L"fullscreen", m_FullScreen, fname);
+	saveInt(L"SavePos", m_SavePos, fname);
+	saveInt(L"SaveSize", m_SaveSize, fname);
+	saveInt(L"GNOME", m_GNOME, fname);
+	saveInt(L"directx", m_Directx, fname);
+	saveInt(L"autoDetect", autoDetect, fname);
+	saveInt(L"8bit", m_Use8Bit, fname);
+	saveInt(L"shared", m_Shared, fname);
+	saveInt(L"swapmouse", m_SwapMouse, fname);
+	saveInt(L"belldeiconify", m_DeiconifyOnBell, fname);
+	saveInt(L"BlockSameMouse", m_BlockSameMouse, fname);
+	saveInt(L"emulate3", m_Emul3Buttons, fname);
+	saveInt(L"JapKeyboard", m_JapKeyboard, fname);
+	saveInt(L"emulate3timeout", m_Emul3Timeout, fname);
+	saveInt(L"emulate3fuzz", m_Emul3Fuzz, fname);
+	saveInt(L"disableclipboard", m_DisableClipboard, fname);
+	saveInt(L"localcursor", m_localCursor, fname);
+	saveInt(L"Scaling", m_scaling, fname);
+	saveInt(L"AutoScaling", m_fAutoScaling, fname);
+	saveInt(L"AutoScalingEven", m_fAutoScalingEven, fname);
+	saveInt(L"AutoScalingLimit", m_fAutoScalingLimit, fname);
+	saveInt(L"scale_num", m_scale_num, fname);
+	saveInt(L"scale_den", m_scale_den, fname);
+	// Tight Specific
+	saveInt(L"cursorshape", m_requestShapeUpdates, fname);
+	saveInt(L"noremotecursor", m_ignoreShapeUpdates, fname);
+	if (m_useCompressLevel) {
+		saveInt(L"compresslevel", m_compressLevel, fname);
+	}
+	if (m_enableJpegCompression) {
+		saveInt(L"quality", m_jpegQualityLevel, fname);
+	}
+
+	// Modif sf@2002
+	saveInt(L"ServerScale", m_nServerScale, fname);
+	saveInt(L"Reconnect", m_reconnectcounter, fname);
+	saveInt(L"EnableCache", m_fEnableCache, fname);
+	saveInt(L"EnableZstd", m_fEnableZstd, fname);
+	saveInt(L"QuickOption", m_quickoption, fname);
+	saveInt(L"UseDSMPlugin", m_fUseDSMPlugin, fname);
+	saveInt(L"UseProxy", (int)m_connectionType, fname);
+	saveInt(L"sponsor", g_disable_sponsor, fname);
+	saveInt(L"allowMonitorSpanning", m_allowMonitorSpanning, fname);
+	saveInt(L"ChangeServerRes", m_ChangeServerRes, fname);
+	saveInt(L"extendDisplay", m_extendDisplay, fname);
+	saveInt(L"showExtend", m_showExtend, fname);
+	saveInt(L"use_virt", m_use_virt, fname);
+	saveInt(L"useAllMonitors", m_useAllMonitors, fname);
+	saveInt(L"requestedWidth", m_requestedWidth, fname);
+	saveInt(L"requestedHeight", m_requestedHeight, fname);
+
+	WritePrivateProfileStringW(L"options", L"DSMPlugin", m_szDSMPluginFilename, fname);
+	WritePrivateProfileStringW(L"options", L"folder", m_document_folder, fname);
+	WritePrivateProfileStringW(L"options", L"prefix", m_prefix, fname);
+	WritePrivateProfileStringW(L"options", L"imageFormat", m_imageFormat, fname);
+	WritePrivateProfileStringW(L"options", L"InfoMsg", m_InfoMsg, fname);
+	WritePrivateProfileStringW(L"options", L"language", m_language, fname);
+
+	saveInt(L"AutoReconnect", m_autoReconnect, fname);
+	saveInt(L"ExitCheck", m_fExitCheck, fname);
+	saveInt(L"FileTransferTimeout", m_FTTimeout, fname);
+	saveInt(L"ListenPort", m_listenPort, fname);
+	saveInt(L"KeepAliveInterval", m_keepAliveInterval, fname);
+	saveInt(L"ThrottleMouse", m_throttleMouse, fname);
+#ifdef _Gii
+	saveInt(L"GiiEnable", m_giiEnable, fname);
+#endif
+	saveInt(L"AutoAcceptIncoming", m_fAutoAcceptIncoming, fname);
+	saveInt(L"AutoAcceptNoDSM", m_fAutoAcceptNoDSM, fname);
+	saveInt(L"RequireEncryption", m_fRequireEncryption, fname);
+	saveInt(L"UseOnlyDefaultConfigFile", m_UseOnlyDefaultConfigFile, fname);
+	saveInt(L"PreemptiveUpdates", m_preemptiveUpdates, fname);
+}
+
+void VNCOptions::LoadOptions(const wchar_t* fname)
+{
+	for (int i = rfbEncodingRaw; i <= LASTENCODING; i++) {
+		wchar_t buf[128];
+		swprintf_s(buf, 128, L"use_encoding_%d", i);
+		m_UseEnc[i] = readInt(buf, m_UseEnc[i], fname) != 0;
+	}
+	int nExistingPreferred = m_PreferredEncodings.empty() ? rfbEncodingZRLE : m_PreferredEncodings[0];
+	int nPreferredEncoding = readInt(L"preferred_encoding", nExistingPreferred, fname);
+	m_PreferredEncodings.clear();
+	m_PreferredEncodings.push_back(nPreferredEncoding);
+
+	m_restricted = readInt(L"restricted", m_restricted, fname) != 0;
+	m_ipv6 = readInt(L"ipv6", m_ipv6, fname) != 0;
+	m_AllowUntrustedServers = readInt(L"AllowUntrustedServers", m_AllowUntrustedServers, fname) != 0;
+	m_ViewOnly = readInt(L"viewonly", m_ViewOnly, fname) != 0;
+	m_NoStatus = readInt(L"nostatus", m_NoStatus, fname) != 0;
+	m_HideEndOfStreamError = readInt(L"HideEOStreamError", m_HideEndOfStreamError, fname) != 0;
+	m_NoHotKeys = readInt(L"nohotkeys", m_NoHotKeys, fname) != 0;
+	m_ShowToolbar = readInt(L"showtoolbar", m_ShowToolbar, fname) != 0;
+	m_FullScreen = readInt(L"fullscreen", m_FullScreen, fname) != 0;
+	m_SavePos = readInt(L"SavePos", m_SavePos, fname) != 0;
+	m_SaveSize = readInt(L"SaveSize", m_SaveSize, fname) != 0;
+	m_GNOME = readInt(L"GNOME", m_GNOME, fname) != 0;
+	m_Directx = readInt(L"directx", m_Directx, fname) != 0;
+	autoDetect = readInt(L"autoDetect", autoDetect, fname) != 0;
+	m_Use8Bit = readInt(L"8bit", m_Use8Bit, fname);
+	m_Shared = readInt(L"shared", m_Shared, fname) != 0;
+	m_SwapMouse = readInt(L"swapmouse", m_SwapMouse, fname) != 0;
+	m_DeiconifyOnBell = readInt(L"belldeiconify", m_DeiconifyOnBell, fname) != 0;
+	m_BlockSameMouse = readInt(L"BlockSameMouse", m_BlockSameMouse, fname) != 0;
+	m_Emul3Buttons = readInt(L"emulate3", m_Emul3Buttons, fname) != 0;
+	m_JapKeyboard = readInt(L"JapKeyboard", m_JapKeyboard, fname) != 0;
+	m_Emul3Timeout = readInt(L"emulate3timeout", m_Emul3Timeout, fname);
+	m_Emul3Fuzz = readInt(L"emulate3fuzz", m_Emul3Fuzz, fname);
+	m_DisableClipboard = readInt(L"disableclipboard", m_DisableClipboard, fname) != 0;
+	m_localCursor = readInt(L"localcursor", m_localCursor, fname);
+	m_scaling = readInt(L"Scaling", m_scaling, fname) != 0;
+	m_fAutoScaling = readInt(L"AutoScaling", m_fAutoScaling, fname) != 0;
+	m_fAutoScalingEven = readInt(L"AutoScalingEven", m_fAutoScalingEven, fname) != 0;
+	m_fAutoScalingLimit = readInt(L"AutoScalingLimit", m_fAutoScalingLimit, fname) != 0;
+	m_scale_num = readInt(L"scale_num", m_scale_num, fname);
+	m_scale_den = readInt(L"scale_den", m_scale_den, fname);
+	// Tight specific
+	m_requestShapeUpdates = readInt(L"cursorshape", m_requestShapeUpdates, fname) != 0;
+	m_ignoreShapeUpdates = readInt(L"noremotecursor", m_ignoreShapeUpdates, fname) != 0;
+	int level = readInt(L"compresslevel", -1, fname);
+	if (level != -1) {
+		m_useCompressLevel = true;
+		m_compressLevel = level;
+	}
+	level = readInt(L"quality", -1, fname);
+	if (level != -1) {
+		m_enableJpegCompression = true;
+		m_jpegQualityLevel = level;
+	}
+	// Modif sf@2002
+	m_nServerScale = readInt(L"ServerScale", m_nServerScale, fname);
+	m_reconnectcounter = readInt(L"Reconnect", m_reconnectcounter, fname);
+	m_fEnableCache = readInt(L"EnableCache", m_fEnableCache, fname) != 0;
+	m_fEnableZstd = readInt(L"EnableZstd", m_fEnableZstd, fname) != 0;
+	m_quickoption = readInt(L"QuickOption", m_quickoption, fname);
+	m_fUseDSMPlugin = readInt(L"UseDSMPlugin", m_fUseDSMPlugin, fname) != 0;
+	m_connectionType = (ConnectionType)readInt(L"UseProxy", (int)m_connectionType, fname);
+	GetPrivateProfileStringW(L"connection", L"proxyhost", L"", m_proxyhost, MAX_HOST_NAME_LEN, fname);
+	m_proxyport = GetPrivateProfileIntW(L"connection", L"proxyport", 0, fname);
+	m_allowMonitorSpanning = readInt(L"allowMonitorSpanning", m_allowMonitorSpanning, fname);
+	m_ChangeServerRes = readInt(L"ChangeServerRes", m_ChangeServerRes, fname);
+	m_extendDisplay = readInt(L"extendDisplay", m_extendDisplay, fname);
+	m_showExtend = readInt(L"showExtend", m_showExtend, fname);
+	m_use_virt = readInt(L"use_virt", m_use_virt, fname);
+	m_useAllMonitors = readInt(L"useAllMonitors", m_useAllMonitors, fname);
+	m_requestedWidth = readInt(L"requestedWidth", m_requestedWidth, fname);
+	m_requestedHeight = readInt(L"requestedHeight", m_requestedHeight, fname);
+
+	{
+		GetPrivateProfileStringW(L"options", L"DSMPlugin", L"NoPlugin", m_szDSMPluginFilename, MAX_PATH, fname);
+		GetPrivateProfileStringW(L"options", L"folder", m_document_folder, m_document_folder, MAX_PATH, fname);
+		GetPrivateProfileStringW(L"options", L"prefix", m_prefix, m_prefix, 56, fname);
+		GetPrivateProfileStringW(L"options", L"imageFormat", m_imageFormat, m_imageFormat, 56, fname);
+		GetPrivateProfileStringW(L"options", L"language", L"en", m_language, 32, fname);
+		GetPrivateProfileStringW(L"options", L"InfoMsg", m_InfoMsg, m_InfoMsg, _countof(m_InfoMsg), fname);
+	}
+	if (!g_disable_sponsor) g_disable_sponsor = readInt(L"sponsor", g_disable_sponsor, fname) != 0;
+
+	m_autoReconnect = readInt(L"AutoReconnect", m_autoReconnect, fname);
+
+	m_fExitCheck = readInt(L"ExitCheck", m_fExitCheck, fname) != 0; //PGM @ Advantig
+	m_FTTimeout = readInt(L"FileTransferTimeout", m_FTTimeout, fname);
+	m_listenPort = readInt(L"ListenPort", m_listenPort, fname);
+	if (m_FTTimeout > 600)
+		m_FTTimeout = 600; // cap at 1 minute
+
+	m_keepAliveInterval = readInt(L"KeepAliveInterval", m_keepAliveInterval, fname);
+	if (m_keepAliveInterval >= (m_FTTimeout - KEEPALIVE_HEADROOM))
+		m_keepAliveInterval = (m_FTTimeout - KEEPALIVE_HEADROOM);
+
+	m_throttleMouse = readInt(L"ThrottleMouse", m_throttleMouse, fname); // adzm 2010-10
+
+#ifdef _Gii
+	m_giiEnable = readInt(L"GiiEnable", (int)m_giiEnable, fname) ? true : false;
+#endif
+
+	//adzm 2009-06-21
+	m_fAutoAcceptIncoming = readInt(L"AutoAcceptIncoming", (int)m_fAutoAcceptIncoming, fname) ? true : false;
+
+	//adzm 2009-07-19
+	m_fAutoAcceptNoDSM = readInt(L"AutoAcceptNoDSM", (int)m_fAutoAcceptNoDSM, fname) ? true : false;
+
+	//adzm 2010-05-12
+	m_fRequireEncryption = readInt(L"RequireEncryption", (int)m_fRequireEncryption, fname) ? true : false;
+	m_UseOnlyDefaultConfigFile = readInt(L"UseOnlyDefaultConfigFile", (int)m_UseOnlyDefaultConfigFile, fname) ? true : false;
+	
+
+	//adzm 2010-07-04
+	m_preemptiveUpdates = readInt(L"PreemptiveUpdates", (int)m_preemptiveUpdates, fname) ? true : false;
+}
+
+void VNCOptions::ShowUsage(LPTSTR info) {
+	TCHAR msg[2048];
+	TCHAR* tmpinf = _T("");
+	if (info != NULL)
+		tmpinf = info;
+	_stprintf_s(msg,
+		_T("%s\r\nUsage includes:\r\n"
+			"  vncviewer [/8bit] [/swapmouse] [/shared] [/belldeiconify]\r\n"
+			"      [/listen [portnum]] [/fullscreen] [/viewonly] [/notoolbar]\r\n"
+			"      [/scale a/b] [/config configfile] [server:display]\r\n"
+			"      [/emulate3] [/quickoption n] [/serverscale n]\r\n"
+			"      [/askexit] [/user msuser] [/password clearpassword]\r\n" // Added silentexit //PGM@ Advantig.com
+			"      [/nostatus] [/dsmplugin pluginfilename.dsm] [/autoscaling]\r\n"
+			"      [/autoreconnect delayInSeconds]\r\n"
+			"      [/reconnectcounter number_reconnect_attempt]\r\n"
+			"      [/nohotkeys] [/proxy proxyhost [portnum]] [/256colors] [/64colors]\r\n"
+			"      [/8colors] [/8greycolors] [/4greycolors] [/2greycolors]\r\n"
+			"      [/encoding [xz | xzyw | zrle | zywrle | tight | zlib | zlibhex | ultra | ultra2 | corre | rre | raw]\r\n"
+			"      [/encodings xz zrle ...]  (in order of priority)\r\n"
+			"      [/autoacceptincoming] [/autoacceptnodsm] [/disablesponsor][/InfoMsg \"Messages need quotes\"]\r\n" //adzm 2009-06-21, adzm 2009-07-19
+			"      [/requireencryption] [/enablecache] [/throttlemouse n] [/socketkeepalivetimeout n]\r\n" //adzm 2010-05-12
+			"      [/gnome] [/hideendofstreamerror]\r\n"
+			"      [/uploadlocal fullfilename /uploadremote path]\r\n"
+			"For full details see documentation."),
+		tmpinf);
+	yesUVNCMessageBox(m_hInstResDLL, NULL, msg, sz_A2, MB_ICONINFORMATION);
+}
+
+// The dialog box allows you to change the session-specific parameters
+int VNCOptions::DoDialog(bool running, HWND hwnd)
+{
+	extern HINSTANCE m_hInstResDLL;
+	m_running = running;
+	return DialogBoxParam(m_hInstResDLL, DIALOG_MAKEINTRESOURCE(IDD_OPTIONDIALOG),
+		hwnd, (DLGPROC)OptDlgProc, (LONG_PTR)this);
+}
+
+void VNCOptions::CancelDialog()
+{
+	::SendMessage(hwnd, WM_COMMAND, IDCANCEL, 0);
+}
+
+BOOL CALLBACK VNCOptions::OptDlgProc(HWND hwnd, UINT uMsg,
+	WPARAM wParam, LPARAM lParam) {
+	// This is a static method, so we don't know which instantiation we're
+	// dealing with. But we can get a pseudo-this from the parameter to
+	// WM_INITDIALOG, which we therafter store with the window and retrieve
+	// as follows:
+	VNCOptions* _this = helper::SafeGetWindowUserData<VNCOptions>(hwnd);
+
+	switch (uMsg) {
+	case WM_INITDIALOG:
+	{
+		HICON hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDR_TRAY));
+		SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+		SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+		helper::SafeSetWindowUserData(hwnd, lParam);
+		_this = (VNCOptions*)lParam;
+		// Initialise the controls
+		_this->hwnd = hwnd;
+		// Window always on top
+		RECT Rect;
+		GetWindowRect(hwnd, &Rect);
+		SetWindowPos(hwnd,
+			HWND_TOPMOST,
+			Rect.left,
+			Rect.top,
+			Rect.right - Rect.left,
+			Rect.bottom - Rect.top,
+			SWP_SHOWWINDOW);
+		_this->m_UseEnc[rfbEncodingTight] = true;
+		HWND had = GetDlgItem(hwnd, IDC_AUTODETECT);
+		SendMessage(had, BM_SETCHECK, _this->autoDetect, 0);
+		int i = 0;
+		int nPreferredEncoding = _this->m_PreferredEncodings.empty() ? rfbEncodingZRLE : _this->m_PreferredEncodings[0];
+		for (i = rfbEncodingRaw; i <= LASTENCODING; i++) {
+			HWND hPref = GetDlgItem(hwnd, IDC_RAWRADIO + (i - rfbEncodingRaw));
+			SendMessage(hPref, BM_SETCHECK,
+				(i == nPreferredEncoding), 0);
+			EnableWindow(hPref, _this->m_UseEnc[i] && !_this->autoDetect);
+		}
+
+		HWND hCopyRect = GetDlgItem(hwnd, ID_SESSION_SET_CRECT);
+		SendMessage(hCopyRect, BM_SETCHECK, _this->m_UseEnc[rfbEncodingCopyRect], 0);
+		EnableWindow(hCopyRect, !_this->autoDetect);
+
+		HWND hSwap = GetDlgItem(hwnd, ID_SESSION_SWAPMOUSE);
+		SendMessage(hSwap, BM_SETCHECK, _this->m_SwapMouse, 0);
+
+		// Tight
+		HWND hAcl = GetDlgItem(hwnd, IDC_ALLOW_COMPRESSLEVEL);
+		EnableWindow(hAcl, !_this->autoDetect);
+
+		HWND hCl = GetDlgItem(hwnd, IDC_COMPRESSLEVEL);
+		EnableWindow(hCl, !_this->autoDetect);
+
+		HWND hAj = GetDlgItem(hwnd, IDC_ALLOW_JPEG);
+		EnableWindow(hAj, !_this->autoDetect);
+
+		HWND hQl = GetDlgItem(hwnd, IDC_QUALITYLEVEL);
+		EnableWindow(hQl, !_this->autoDetect);
+
+		HWND hDeiconify = GetDlgItem(hwnd, IDC_BELLDEICONIFY);
+		SendMessage(hDeiconify, BM_SETCHECK, _this->m_DeiconifyOnBell, 0);
+
+		HWND hDisableClip = GetDlgItem(hwnd, IDC_DISABLECLIPBOARD);
+		SendMessage(hDisableClip, BM_SETCHECK, _this->m_DisableClipboard, 0);
+
+		// sf@2005 - New Color depth choice
+		HWND hColorMode = NULL;
+		switch (_this->m_Use8Bit)
+		{
+		case rfbPFFullColors:
+			hColorMode = GetDlgItem(hwnd, IDC_FULLCOLORS_RADIO);
+			break;
+		case rfbPF256Colors:
+			hColorMode = GetDlgItem(hwnd, IDC_256COLORS_RADIO);
+			break;
+		case rfbPF64Colors:
+			hColorMode = GetDlgItem(hwnd, IDC_64COLORS_RADIO);
+			break;
+		case rfbPF8Colors:
+			hColorMode = GetDlgItem(hwnd, IDC_8COLORS_RADIO);
+			break;
+		case rfbPF8GreyColors:
+			hColorMode = GetDlgItem(hwnd, IDC_8GREYCOLORS_RADIO);
+			break;
+		case rfbPF4GreyColors:
+			hColorMode = GetDlgItem(hwnd, IDC_4GREYCOLORS_RADIO);
+			break;
+		case rfbPF2GreyColors:
+			hColorMode = GetDlgItem(hwnd, IDC_2GREYCOLORS_RADIO);
+			break;
+		}
+		if (hColorMode) SendMessage(hColorMode, BM_SETCHECK, true, 0);
+
+		// sf@2005 - New color depth choice
+		hColorMode = GetDlgItem(hwnd, IDC_FULLCOLORS_RADIO);
+		EnableWindow(hColorMode, !_this->autoDetect);
+		hColorMode = GetDlgItem(hwnd, IDC_256COLORS_RADIO);
+		EnableWindow(hColorMode, !_this->autoDetect);
+		hColorMode = GetDlgItem(hwnd, IDC_64COLORS_RADIO);
+		EnableWindow(hColorMode, !_this->autoDetect);
+		hColorMode = GetDlgItem(hwnd, IDC_8COLORS_RADIO);
+		EnableWindow(hColorMode, !_this->autoDetect);
+		hColorMode = GetDlgItem(hwnd, IDC_8GREYCOLORS_RADIO);
+		EnableWindow(hColorMode, !_this->autoDetect);
+		hColorMode = GetDlgItem(hwnd, IDC_4GREYCOLORS_RADIO);
+		EnableWindow(hColorMode, !_this->autoDetect);
+		hColorMode = GetDlgItem(hwnd, IDC_2GREYCOLORS_RADIO);
+		EnableWindow(hColorMode, !_this->autoDetect);
+
+		HWND hShared = GetDlgItem(hwnd, IDC_SHARED);
+		SendMessage(hShared, BM_SETCHECK, _this->m_Shared, 0);
+		EnableWindow(hShared, !_this->m_running);
+
+		HWND hViewOnly = GetDlgItem(hwnd, IDC_VIEWONLY);
+		SendMessage(hViewOnly, BM_SETCHECK, _this->m_ViewOnly, 0);
+
+		// Toolbar
+		HWND hShowToolbar = GetDlgItem(hwnd, IDC_SHOWTOOLBAR);
+		SendMessage(hShowToolbar, BM_SETCHECK, _this->m_ShowToolbar, 0);
+
+		HWND hAutoScaling = GetDlgItem(hwnd, IDC_SCALING);
+		SendMessage(hAutoScaling, BM_SETCHECK, _this->m_fAutoScaling, 0);
+
+		HWND hAutoScalingEven = GetDlgItem(hwnd, IDC_SCALINGEVEN);
+		SendMessage(hAutoScalingEven, BM_SETCHECK, _this->m_fAutoScalingEven, 0);
+
+		// SetDlgItemInt( hwnd, IDC_SCALE_NUM, _this->m_scale_num, FALSE);
+		// SetDlgItemInt( hwnd, IDC_SCALE_DEN, _this->m_scale_den, FALSE);
+
+		// Viewer Scaling combo box - Now using percentage
+		// The combo is still editable for customizable value
+		int Scales[13] = { 25, 50, 75, 80, 85, 90, 95, 100, 125, 150, 200, 300, 400 };
+		HWND hViewerScale = GetDlgItem(hwnd, IDC_SCALE_CB);
+		TCHAR szPer[4];
+		for (i = 0; i <= 12; i++)
+		{
+			_itow_s(Scales[i], szPer, 10);
+			SendMessage(hViewerScale, CB_INSERTSTRING, (WPARAM)i, (LPARAM)szPer);
+		}
+		SetDlgItemInt(hwnd,
+			IDC_SCALE_CB,
+			((_this->m_scale_num * 100) / _this->m_scale_den),
+			FALSE);
+
+		// Modif sf@2002 - Server Scaling
+		SetDlgItemInt(hwnd, IDC_SERVER_SCALE, _this->m_nServerScale, FALSE);
+
+		if (_this->m_Shared)
+			SetDlgItemInt(hwnd, IDC_SERVER_RECON, _this->m_reconnectcounter, FALSE);
+		else SetDlgItemInt(hwnd, IDC_SERVER_RECON, 0, FALSE);
+		if (_this->m_Shared)
+			SetDlgItemInt(hwnd, IDC_SERVER_RECON_TIME, _this->m_autoReconnect, FALSE);
+		else SetDlgItemInt(hwnd, IDC_SERVER_RECON_TIME, 0, FALSE);
+
+		SetDlgItemInt(hwnd, IDC_FTTIMEOUT, _this->m_FTTimeout, FALSE);
+
+		// Modif sf@2002 - Cache
+		HWND hCache = GetDlgItem(hwnd, ID_SESSION_SET_CACHE);
+		SendMessage(hCache, BM_SETCHECK, _this->m_fEnableCache, 0);
+		EnableWindow(hCache, !_this->autoDetect);
+
+		HWND hZstd = GetDlgItem(hwnd, IDC_ZSTD);
+		SendMessage(hZstd, BM_SETCHECK, _this->m_fEnableZstd, 0);
+
+#ifndef _XZ
+		HWND hxz = GetDlgItem(hwnd, IDC_XZRADIO);
+		EnableWindow(hxz, false);
+		ShowWindow(hxz, false);
+		HWND hxzyw = GetDlgItem(hwnd, IDC_XZYWRADIO);
+		EnableWindow(hxzyw, false);
+		ShowWindow(hxzyw, false);
+#endif
+		HWND hFullScreen = GetDlgItem(hwnd, IDC_FULLSCREEN);
+		SendMessage(hFullScreen, BM_SETCHECK, _this->m_FullScreen, 0);
+
+		HWND hSavePos = GetDlgItem(hwnd, IDC_SAVEPOS);
+		SendMessage(hSavePos, BM_SETCHECK, _this->m_SavePos, 0);
+
+		HWND hSaveSize = GetDlgItem(hwnd, IDC_SAVESIZE);
+		SendMessage(hSaveSize, BM_SETCHECK, _this->m_SaveSize, 0);
+
+		HWND hGNOME = GetDlgItem(hwnd, IDC_GNOME);
+		SendMessage(hGNOME, BM_SETCHECK, _this->m_GNOME, 0);
+
+		HWND hDirectx = GetDlgItem(hwnd, IDC_DIRECTX);
+		SendMessage(hDirectx, BM_SETCHECK, _this->m_Directx, 0);
+
+		HWND hEmulate = GetDlgItem(hwnd, IDC_EMULATECHECK);
+		SendMessage(hEmulate, BM_SETCHECK, _this->m_Emul3Buttons, 0);
+
+		HWND hJapkeyboard = GetDlgItem(hwnd, IDC_JAPKEYBOARD);
+		SendMessage(hJapkeyboard, BM_SETCHECK, _this->m_JapKeyboard, 0);
+
+		// Tight Specific
+		HWND hAllowCompressLevel = GetDlgItem(hwnd, IDC_ALLOW_COMPRESSLEVEL);
+		SendMessage(hAllowCompressLevel, BM_SETCHECK, _this->m_useCompressLevel, 0);
+
+		HWND hAllowJpeg = GetDlgItem(hwnd, IDC_ALLOW_JPEG);
+		SendMessage(hAllowJpeg, BM_SETCHECK, _this->m_enableJpegCompression, 0);
+
+		SetDlgItemInt(hwnd, IDC_COMPRESSLEVEL, _this->m_compressLevel, FALSE);
+		SetDlgItemInt(hwnd, IDC_QUALITYLEVEL, _this->m_jpegQualityLevel, FALSE);
+
+		HWND hRemoteCursor;
+		if (_this->m_requestShapeUpdates && !_this->m_ignoreShapeUpdates) {
+			hRemoteCursor = GetDlgItem(hwnd, IDC_CSHAPE_ENABLE_RADIO);
+		}
+		else if (_this->m_requestShapeUpdates) {
+			hRemoteCursor = GetDlgItem(hwnd, IDC_CSHAPE_IGNORE_RADIO);
+		}
+		else {
+			hRemoteCursor = GetDlgItem(hwnd, IDC_CSHAPE_DISABLE_RADIO);
+		}
+		SendMessage(hRemoteCursor, BM_SETCHECK, true, 0);
+
+		HWND hsponsor = GetDlgItem(hwnd, IDC_CHECK1);
+		SendMessage(hsponsor, BM_SETCHECK, g_disable_sponsor, 1);
+
+		//CentreWindow(hwnd);
+		SetForegroundWindow(hwnd);
+
+		HWND hExitCheck = GetDlgItem(hwnd, IDC_EXIT_CHECK); //PGM @ Advantig
+		SendMessage(hExitCheck, BM_SETCHECK, _this->m_fExitCheck, 0); //PGM @ Advantig
+
+		//adzm 2010-07-04
+		HWND hpreemptiveUpdates = GetDlgItem(hwnd, IDC_PREEMPTIVEUPDATES);
+		SendMessage(hpreemptiveUpdates, BM_SETCHECK, _this->m_preemptiveUpdates ? BST_CHECKED : BST_UNCHECKED, 0);
+
+		//adzm 2010-10
+		SetDlgItemInt(hwnd, IDC_MOUSE_THROTTLE, _this->m_throttleMouse, FALSE);
+
+		return TRUE;
+	}
+
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+		{
+			HWND had = GetDlgItem(hwnd, IDC_AUTODETECT);
+			_this->autoDetect =
+				(SendMessage(had, BM_GETCHECK, 0, 0) == BST_CHECKED);
+			_this->m_PreferredEncodings.clear();
+			for (int i = rfbEncodingRaw; i <= LASTENCODING; i++) {
+				HWND hPref = GetDlgItem(hwnd, IDC_RAWRADIO + i - rfbEncodingRaw);
+				if (SendMessage(hPref, BM_GETCHECK, 0, 0) == BST_CHECKED)
+					_this->m_PreferredEncodings.push_back(i);
+			}
+
+			/*// [v1.0.2-jp2 fix-->]
+			  if (SendMessage(GetDlgItem(hwnd, IDC_ULTRA), BM_GETCHECK, 0, 0) == BST_CHECKED){
+					SendMessage(GetDlgItem(hwnd, ID_SESSION_SET_CRECT), BM_SETCHECK, false, 0);
+			  }
+			   if (SendMessage(GetDlgItem(hwnd, IDC_ULTRA2), BM_GETCHECK, 0, 0) == BST_CHECKED){
+					SendMessage(GetDlgItem(hwnd, ID_SESSION_SET_CRECT), BM_SETCHECK, false, 0);
+			  }
+			// [<--v1.0.2-jp2 fix]*/
+
+			HWND hCopyRect = GetDlgItem(hwnd, ID_SESSION_SET_CRECT);
+			_this->m_UseEnc[rfbEncodingCopyRect] =
+				(SendMessage(hCopyRect, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			// Modif sf@2002 - Cache - v1.1.0
+			HWND hCache = GetDlgItem(hwnd, ID_SESSION_SET_CACHE);
+			_this->m_fEnableCache =
+				(SendMessage(hCache, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hZstd = GetDlgItem(hwnd, IDC_ZSTD);
+			_this->m_fEnableZstd =
+				(SendMessage(hZstd, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hSwap = GetDlgItem(hwnd, ID_SESSION_SWAPMOUSE);
+			_this->m_SwapMouse =
+				(SendMessage(hSwap, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hDeiconify = GetDlgItem(hwnd, IDC_BELLDEICONIFY);
+			_this->m_DeiconifyOnBell =
+				(SendMessage(hDeiconify, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hDisableClip = GetDlgItem(hwnd, IDC_DISABLECLIPBOARD);
+			_this->m_DisableClipboard =
+				(SendMessage(hDisableClip, BM_GETCHECK, 0, 0) == BST_CHECKED);
+			// sd@2005 - New Color depth choice
+			HWND hColorMode = GetDlgItem(hwnd, IDC_FULLCOLORS_RADIO);
+			if (SendMessage(hColorMode, BM_GETCHECK, 0, 0) == BST_CHECKED)
+				_this->m_Use8Bit = rfbPFFullColors;
+			hColorMode = GetDlgItem(hwnd, IDC_256COLORS_RADIO);
+			if (SendMessage(hColorMode, BM_GETCHECK, 0, 0) == BST_CHECKED)
+				_this->m_Use8Bit = rfbPF256Colors;
+			hColorMode = GetDlgItem(hwnd, IDC_64COLORS_RADIO);
+			if (SendMessage(hColorMode, BM_GETCHECK, 0, 0) == BST_CHECKED)
+				_this->m_Use8Bit = rfbPF64Colors;
+			hColorMode = GetDlgItem(hwnd, IDC_8COLORS_RADIO);
+			if (SendMessage(hColorMode, BM_GETCHECK, 0, 0) == BST_CHECKED)
+				_this->m_Use8Bit = rfbPF8Colors;
+			hColorMode = GetDlgItem(hwnd, IDC_8GREYCOLORS_RADIO);
+			if (SendMessage(hColorMode, BM_GETCHECK, 0, 0) == BST_CHECKED)
+				_this->m_Use8Bit = rfbPF8GreyColors;
+			hColorMode = GetDlgItem(hwnd, IDC_4GREYCOLORS_RADIO);
+			if (SendMessage(hColorMode, BM_GETCHECK, 0, 0) == BST_CHECKED)
+				_this->m_Use8Bit = rfbPF4GreyColors;
+			hColorMode = GetDlgItem(hwnd, IDC_2GREYCOLORS_RADIO);
+			if (SendMessage(hColorMode, BM_GETCHECK, 0, 0) == BST_CHECKED)
+				_this->m_Use8Bit = rfbPF2GreyColors;
+
+			HWND hShared = GetDlgItem(hwnd, IDC_SHARED);
+			_this->m_Shared =
+				(SendMessage(hShared, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hViewOnly = GetDlgItem(hwnd, IDC_VIEWONLY);
+			_this->m_ViewOnly =
+				(SendMessage(hViewOnly, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hShowToolbar = GetDlgItem(hwnd, IDC_SHOWTOOLBAR);
+			_this->m_ShowToolbar =
+				(SendMessage(hShowToolbar, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hAutoScaling = GetDlgItem(hwnd, IDC_SCALING);
+			_this->m_fAutoScaling = (SendMessage(hAutoScaling, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hAutoScalingEven = GetDlgItem(hwnd, IDC_SCALINGEVEN);
+			_this->m_fAutoScalingEven = (SendMessage(hAutoScalingEven, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hViewerScaling = GetDlgItem(hwnd, IDC_SCALE_CB);
+			int nErr;
+			int nPer = GetDlgItemInt(hwnd, IDC_SCALE_CB, &nErr, FALSE);
+			if (nPer > 0)
+			{
+				_this->m_scale_num = nPer;
+				_this->m_scale_den = 100;
+			}
+			_this->m_scaling = !(_this->m_scale_num == 100);
+
+			if (_this->m_scaling || _this->m_fAutoScaling)
+			{
+				// _this->m_scale_num = GetDlgItemInt( hwnd, IDC_SCALE_NUM, NULL, TRUE);
+				// _this->m_scale_den = GetDlgItemInt( hwnd, IDC_SCALE_DEN, NULL, TRUE);
+				// Modif sf@2002 - Server Scaling
+				_this->m_nServerScale = GetDlgItemInt(hwnd, IDC_SERVER_SCALE, NULL, TRUE);
+				_this->FixScaling();
+				//if (_this->m_scale_num == 1 && _this->m_scale_den == 1)
+				// 	  _this->m_scaling = false;
+			}
+			else
+			{
+				_this->m_scale_num = 1;
+				_this->m_scale_den = 1;
+				// Modif sf@2002 - Server Scaling
+				_this->m_nServerScale = GetDlgItemInt(hwnd, IDC_SERVER_SCALE, NULL, TRUE);
+				if (_this->m_nServerScale < 1 || _this->m_nServerScale > 9)
+					_this->m_nServerScale = 1;
+			}
+			if (_this->m_Shared)
+				_this->m_reconnectcounter = GetDlgItemInt(hwnd, IDC_SERVER_RECON, NULL, TRUE);
+			else _this->m_reconnectcounter = 0;
+			if (_this->m_Shared)
+				_this->m_autoReconnect = GetDlgItemInt(hwnd, IDC_SERVER_RECON_TIME, NULL, TRUE);
+			else _this->m_autoReconnect = 0;
+
+			_this->m_FTTimeout = GetDlgItemInt(hwnd, IDC_FTTIMEOUT, NULL, TRUE);
+
+			HWND hFullScreen = GetDlgItem(hwnd, IDC_FULLSCREEN);
+			_this->m_FullScreen =
+				(SendMessage(hFullScreen, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hSavePos = GetDlgItem(hwnd, IDC_SAVEPOS);
+			_this->m_SavePos =
+				(SendMessage(hSavePos, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hSaveSize = GetDlgItem(hwnd, IDC_SAVESIZE);
+			_this->m_SaveSize =
+				(SendMessage(hSaveSize, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hGNOME = GetDlgItem(hwnd, IDC_GNOME);
+			_this->m_GNOME =
+				(SendMessage(hGNOME, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hDirectx = GetDlgItem(hwnd, IDC_DIRECTX);
+			_this->m_Directx =
+				(SendMessage(hDirectx, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hEmulate = GetDlgItem(hwnd, IDC_EMULATECHECK);
+			_this->m_Emul3Buttons =
+				(SendMessage(hEmulate, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			HWND hJapkeyboard = GetDlgItem(hwnd, IDC_JAPKEYBOARD);
+			_this->m_JapKeyboard =
+				(SendMessage(hJapkeyboard, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			// Tight Specific
+			HWND hAllowCompressLevel = GetDlgItem(hwnd, IDC_ALLOW_COMPRESSLEVEL);
+			_this->m_useCompressLevel =
+				(SendMessage(hAllowCompressLevel, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			_this->m_compressLevel = GetDlgItemInt(hwnd, IDC_COMPRESSLEVEL, NULL, TRUE);
+			if (_this->m_compressLevel < 0) { _this->m_compressLevel = 0; }
+			if (_this->m_compressLevel > 9) { _this->m_compressLevel = 9; }
+
+			HWND hAllowJpeg = GetDlgItem(hwnd, IDC_ALLOW_JPEG);
+			_this->m_enableJpegCompression =
+				(SendMessage(hAllowJpeg, BM_GETCHECK, 0, 0) == BST_CHECKED);
+
+			_this->m_jpegQualityLevel = GetDlgItemInt(hwnd, IDC_QUALITYLEVEL, NULL, TRUE);
+			if (_this->m_jpegQualityLevel < 0) { _this->m_jpegQualityLevel = 0; }
+			if (_this->m_jpegQualityLevel > 9) { _this->m_jpegQualityLevel = 9; }
+
+			_this->m_requestShapeUpdates = false;
+			_this->m_ignoreShapeUpdates = false;
+			HWND hRemoteCursor = GetDlgItem(hwnd, IDC_CSHAPE_ENABLE_RADIO);
+			if (SendMessage(hRemoteCursor, BM_GETCHECK, 0, 0) == BST_CHECKED) {
+				_this->m_requestShapeUpdates = true;
+			}
+			else {
+				hRemoteCursor = GetDlgItem(hwnd, IDC_CSHAPE_IGNORE_RADIO);
+				if (SendMessage(hRemoteCursor, BM_GETCHECK, 0, 0) == BST_CHECKED) {
+					_this->m_requestShapeUpdates = true;
+					_this->m_ignoreShapeUpdates = true;
+				}
+			}
+
+			HWND hsponsor = GetDlgItem(hwnd, IDC_CHECK1);
+			if (SendMessage(hsponsor, BM_GETCHECK, 0, 0) == BST_CHECKED)
+			{
+				g_disable_sponsor = true;
+			}
+			else
+			{
+				g_disable_sponsor = false;
+			}
+
+			DWORD val = g_disable_sponsor;
+
+			//adzm 2010-07-04
+			HWND hpreemptiveUpdates = GetDlgItem(hwnd, IDC_PREEMPTIVEUPDATES);
+			_this->m_preemptiveUpdates = (SendMessage(hpreemptiveUpdates, BM_GETCHECK, 0, 0) == BST_CHECKED) ? true : false;
+
+			//adzm 2010-10
+			BOOL bGotInt = FALSE;
+			UINT nThrottle = GetDlgItemInt(hwnd, IDC_MOUSE_THROTTLE, &bGotInt, FALSE);
+			if (bGotInt) {
+				_this->m_throttleMouse = (int)nThrottle;
+			}
+
+			EndDialog(hwnd, TRUE);
+
+			return TRUE;
+		}
+
+		case IDCANCEL:
+			EndDialog(hwnd, FALSE);
+			return TRUE;
+
+		case IDC_AUTODETECT:
+		{
+			bool ad = IsDlgButtonChecked(hwnd, IDC_AUTODETECT) ? true : false;
+			for (int i = rfbEncodingRaw; i <= LASTENCODING; i++)
+			{
+				HWND hPref = GetDlgItem(hwnd, IDC_RAWRADIO + (i - rfbEncodingRaw));
+				EnableWindow(hPref, _this->m_UseEnc[i] && !ad);
+			}
+
+			HWND hCopyRect = GetDlgItem(hwnd, ID_SESSION_SET_CRECT);
+			EnableWindow(hCopyRect, !ad);
+
+			// sf@2005 - New color depth choice
+			HWND hColorMode = GetDlgItem(hwnd, IDC_FULLCOLORS_RADIO);
+			EnableWindow(hColorMode, !ad);
+			hColorMode = GetDlgItem(hwnd, IDC_256COLORS_RADIO);
+			EnableWindow(hColorMode, !ad);
+			hColorMode = GetDlgItem(hwnd, IDC_64COLORS_RADIO);
+			EnableWindow(hColorMode, !ad);
+			hColorMode = GetDlgItem(hwnd, IDC_8COLORS_RADIO);
+			EnableWindow(hColorMode, !ad);
+			hColorMode = GetDlgItem(hwnd, IDC_8GREYCOLORS_RADIO);
+			EnableWindow(hColorMode, !ad);
+			hColorMode = GetDlgItem(hwnd, IDC_4GREYCOLORS_RADIO);
+			EnableWindow(hColorMode, !ad);
+			hColorMode = GetDlgItem(hwnd, IDC_2GREYCOLORS_RADIO);
+			EnableWindow(hColorMode, !ad);
+
+			// sf@2002
+			HWND hCache = GetDlgItem(hwnd, ID_SESSION_SET_CACHE);
+			EnableWindow(hCache, !ad);
+
+			HWND hAcl = GetDlgItem(hwnd, IDC_ALLOW_COMPRESSLEVEL);
+			EnableWindow(hAcl, !ad);
+
+			HWND hCl = GetDlgItem(hwnd, IDC_COMPRESSLEVEL);
+			EnableWindow(hCl, !ad);
+
+			HWND hAj = GetDlgItem(hwnd, IDC_ALLOW_JPEG);
+			EnableWindow(hAj, !ad);
+
+			HWND hQl = GetDlgItem(hwnd, IDC_QUALITYLEVEL);
+			EnableWindow(hQl, !ad);
+		}
+		return TRUE;
+
+		// If Xor Zlib is checked, check Cache encoding as well
+		// (the user can still uncheck it if he wants)
+		case IDC_ZLIBRADIO:
+		{
+			bool xor_ = IsDlgButtonChecked(hwnd, IDC_ZLIBRADIO) ? true : false;
+			if (xor_)
+			{
+				HWND hCache = GetDlgItem(hwnd, ID_SESSION_SET_CACHE);
+				SendMessage(hCache, BM_SETCHECK, true, 0);
+			}
+			return TRUE;
+		}
+		case IDC_ULTRA:
+			return TRUE;
+		case IDC_256COLORS_RADIO:
+		case IDC_64COLORS_RADIO:
+		case IDC_8COLORS_RADIO:
+		case IDC_8GREYCOLORS_RADIO:
+		case IDC_4GREYCOLORS_RADIO:
+		case IDC_2GREYCOLORS_RADIO:
+		{
+			bool ultra2 = IsDlgButtonChecked(hwnd, IDC_ULTRA2) ? true : false;
+			if (ultra2)
+			{
+				HWND hultra = GetDlgItem(hwnd, IDC_ULTRA2);
+				SendMessage(hultra, BM_SETCHECK, false, 0);
+				hultra = GetDlgItem(hwnd, IDC_ULTRA);
+				SendMessage(hultra, BM_SETCHECK, true, 0);
+			}
+		}
+		break;
+		case IDC_ULTRA2:
+		{
+			bool ultra2 = IsDlgButtonChecked(hwnd, IDC_ULTRA2) ? true : false;
+			if (ultra2)
+			{
+				HWND hColorMode = GetDlgItem(hwnd, IDC_FULLCOLORS_RADIO);
+				SendMessage(hColorMode, BM_SETCHECK, true, 0);
+				hColorMode = GetDlgItem(hwnd, IDC_256COLORS_RADIO);
+				SendMessage(hColorMode, BM_SETCHECK, false, 0);
+				hColorMode = GetDlgItem(hwnd, IDC_64COLORS_RADIO);
+				SendMessage(hColorMode, BM_SETCHECK, false, 0);
+				hColorMode = GetDlgItem(hwnd, IDC_8COLORS_RADIO);
+				SendMessage(hColorMode, BM_SETCHECK, false, 0);
+				hColorMode = GetDlgItem(hwnd, IDC_8GREYCOLORS_RADIO);
+				SendMessage(hColorMode, BM_SETCHECK, false, 0);
+				hColorMode = GetDlgItem(hwnd, IDC_4GREYCOLORS_RADIO);
+				SendMessage(hColorMode, BM_SETCHECK, false, 0);
+				hColorMode = GetDlgItem(hwnd, IDC_2GREYCOLORS_RADIO);
+				SendMessage(hColorMode, BM_SETCHECK, false, 0);
+			}
+			return TRUE;
+		}
+		}
+		break;
+
+	case WM_DESTROY:
+		EndDialog(hwnd, FALSE);
+		return TRUE;
+	}
+	return 0;
+}

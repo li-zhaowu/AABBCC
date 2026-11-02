@@ -1,0 +1,34 @@
+<!--
+// This file is part of UltraVNC
+// https://github.com/ultravnc/UltraVNC
+// https://uvnc.com/
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// SPDX-FileCopyrightText: Copyright (C) 2002-2025 UltraVNC Team Members. All Rights Reserved.
+// SPDX-FileCopyrightText: Copyright (C) 1999-2002 Vdacc-VNC & eSVNC Projects. All Rights Reserved.
+//
+-->
+
+
+<!-- Qt Creator resource script from the authadmin.rc to authadmin.qrc -->
+<!-- Sample Comment for qrc files from XML spec https://www.w3.org/TR/REC-xml/#sec-comments -->
+<!-- To Do if needed Visual Studio rc files to Qt Creator qrc files -->
+<!-- Below sample of Qt Creator qrc file. -->
+<RCC>
+    <qresource prefix="/MyPics">
+        <file>images/copy.png</file>
+        <file>images/cut.png</file>
+        <file>images/new.png</file>
+        <file>images/open.png</file>
+        <file>images/paste.png</file>
+        <file>images/save.png</file>
+    </qresource>
+</RCC>
+<!-- or like the authadmin.qrc file below -->
+<RCC>
+    <qresource prefix="/QtUltraVNCFiles">
+        <file>authadmin.rc</file>
+    </qresource>
+</RCC>
+<!-- Note you can't use XML comments inside a qrc file Qt Creator will delete it when you edit the qrc file -->
