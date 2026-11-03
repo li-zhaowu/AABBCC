@@ -14,6 +14,7 @@
 #include "SettingsManager.h"
 #include "credentials.h"
 #include "common/FileClipboard.h"
+#include "vncVideoStreamer.h"
 
 #include <mutex>
 
@@ -94,6 +95,41 @@ void vncServerExtChannel::OpenForClient()
 		}
 	}
 
+	// Video mode needs NVENC on an NVIDIA GPU; without it the viewer keeps
+	// the classic mode only (its menu entry reports why).
+	std::string why;
+	if (vncVideoStreamer::IsSupported(&why)) {
+		vncVideoStreamer::Callbacks vc;
+		vc.send = [this](ExtPriority prio, uint8_t subtype, const std::vector<uint8_t>& payload) {
+			return Send(prio, kChVideo, subtype, payload);
+		};
+		vc.log = [this](int level, const std::string& msg) { Log(level, msg); };
+		vc.queuedVideoBytes = [this] { return QueuedBytes(kPrioVideo); };
+		vc.framebufferArea = [this](RECT* area, std::string* reason) -> uint32_t {
+			if (m_client->m_nScale != 1) {
+				*reason = "video mode does not work with server side scaling";
+				return video::kStatusScaling;
+			}
+			// Same mapping as the cursor position: framebuffer (0,0) is at
+			// screen (m_ScreenOffset + monitor_Offset).
+			const int x = m_client->m_ScreenOffsetx + m_client->monitor_Offsetx;
+			const int y = m_client->m_ScreenOffsety + m_client->monitor_Offsety;
+			const rfb::Rect fb = m_client->m_ScaledScreen;
+			area->left = x;
+			area->top = y;
+			area->right = x + (fb.br.x - fb.tl.x);
+			area->bottom = y + (fb.br.y - fb.tl.y);
+			return 0;
+		};
+		m_video.reset(new vncVideoStreamer(vc));
+		SetHandler(kChVideo, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
+			m_video->OnMessage(subtype, payload);
+		});
+		mask |= ChannelBit(kChVideo);
+	} else {
+		Log(1, "video mode unavailable: " + why);
+	}
+
 	SetLocalChannelMask(mask);
 	Open();
 }
@@ -107,6 +143,8 @@ void vncServerExtChannel::OnNegotiated(uint32_t mask)
 
 void vncServerExtChannel::StopEngines()
 {
+	if (m_video)
+		m_video->Shutdown();
 	if (m_fileClip) {
 		m_fileClip->OnDisconnected();
 		m_fileClip->Stop();

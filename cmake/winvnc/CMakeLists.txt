@@ -17,6 +17,8 @@ find_package(ZLIB REQUIRED)
 find_package(zstd CONFIG REQUIRED)
 find_package(LibLZMA REQUIRED)
 find_package(unofficial-sodium CONFIG REQUIRED)
+# NVENC API header (NVIDIA Video Codec SDK, MIT) for video mode; header only.
+find_path(FFNVCODEC_INCLUDE_DIR ffnvcodec/nvEncodeAPI.h REQUIRED)
   
 set(${PROJECT_NAME}_SOURCES
     ../../DSMPlugin/DSMPlugin.cpp
@@ -25,6 +27,7 @@ set(${PROJECT_NAME}_SOURCES
     ../../common/ExtChannel.cpp
     ../../common/FileClipProto.cpp
     ../../common/FileClipboard.cpp
+    ../../common/VideoProto.cpp
     ../../common/Hyperlinks.cpp
     ../../common/UltraVncZ.cpp
     ../../common/d3des.c
@@ -79,6 +82,9 @@ set(${PROJECT_NAME}_SOURCES
     vncbuffer.cpp
     vncclient.cpp
     vncExtChannel.cpp
+    vncNvencEncoder.cpp
+    vncVideoCapture.cpp
+    vncVideoStreamer.cpp
     vncconndialog.cpp
     vncdesktop.cpp
     vncdesktopsink.cpp
@@ -106,6 +112,7 @@ add_executable(${PROJECT_NAME} WIN32)
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/..")
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/../common")
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/../omnithread")
+target_include_directories(${PROJECT_NAME} PRIVATE "${FFNVCODEC_INCLUDE_DIR}")
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/../winvnc")
 foreach(file ${${PROJECT_NAME}_SOURCES})
     target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/../winvnc/winvnc/${file}")
@@ -120,6 +127,7 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE zstd::libzstd
     PRIVATE LibLZMA::LibLZMA
 	PRIVATE unofficial-sodium::sodium
+    PRIVATE d3d11 dxgi winmm
     libomnithread
     librdr
     libudtcloud

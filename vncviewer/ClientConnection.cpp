@@ -825,6 +825,7 @@ void ClientConnection::DoConnection(bool reconnect)
 	// server answers rfbEncodingExtCaps with its Caps. Files are copied and
 	// pasted only if the clipboard is enabled and we may send input.
 	m_ext->ResetConnection(!m_opts->m_DisableClipboard && !m_opts->m_ViewOnly);
+	ResetVideoState();
 
     SetFormatAndEncodings();
 
@@ -1537,6 +1538,7 @@ void ClientConnection::CreateDisplay()
 		AppendMenu(hsysmenu, MF_STRING, ID_DBUTTON,	sz_L18);
 		AppendMenu(hsysmenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hsysmenu, MF_STRING, ID_SW, L"Take Snapshot  \tCtrl+Alt+Shift+S");
+		AppendMenu(hsysmenu, MF_STRING, ID_VIDEOMODE, L"Video Mode (GPU)");
 		// AppendMenu(hsysmenu, MF_STRING, ID_BUTTON,	_T("Show Toolbar Buttons"));
 		AppendMenu(hsysmenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hsysmenu, MF_STRING, ID_DINPUT,	sz_L19); // disable remote input
@@ -4767,6 +4769,7 @@ void ClientConnection::SuspendThread()
 	m_bKillThread = true;
 	m_running = false;
 	m_ext->Disconnect();
+	ResetVideoState();
 
 	// Reinit encoders stuff
 	delete(zis);
@@ -6044,6 +6047,11 @@ void* ClientConnection::run_undetached(void* arg) {
 
 void ClientConnection::Internal_SendFramebufferUpdateRequest(int x, int y, int w, int h, bool incremental)
 {
+	// Video mode: the server streams the screen; asking for updates would
+	// only send the same pixels twice. Full requests (end of video mode,
+	// format changes) still go out.
+	if (incremental && m_videoActive)
+		return;
 	if (m_pFileTransfer && (m_pFileTransfer->m_fFileTransferRunning && ( m_pFileTransfer->m_fVisible || m_pFileTransfer->UsingOldProtocol()))) return;
 	if (m_pTextChat->m_fTextChatRunning && m_pTextChat->m_fVisible) return;
     rfbFramebufferUpdateRequestMsg fur;
@@ -8474,6 +8482,11 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 
 	if (_this == NULL) return DefWindowProc(hwnd, iMsg, wParam, lParam);
 
+	if (iMsg == VideoModeEndedMessage()) {
+		_this->OnVideoModeEnded(wParam);
+		return 0;
+	}
+
 			switch (iMsg)
 			{
 			case WM_COPYDATA:
@@ -8515,6 +8528,9 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 				{
 					switch (LOWORD(wParam))
 					{
+					case ID_VIDEOMODE:
+						_this->ToggleVideoMode();
+						return 0;
 					case ID_SW:
 						{
 						Snapshot snapshot;

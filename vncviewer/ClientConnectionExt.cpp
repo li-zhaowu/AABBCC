@@ -29,6 +29,12 @@ ViewerExtChannel::ViewerExtChannel(ClientConnection* cc)
 	// Keyboard and mouse events wait for the write lock while a batch goes
 	// out; keep batches small so input stays responsive on slow uplinks.
 	SetBatchBudget(64 * 1024);
+
+	// Video mode is decoded with Windows' own decoder; the channel is always
+	// offered, the user switches it on from the system menu.
+	SetHandler(kChVideo, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
+		m_cc->OnVideoMessage(subtype, payload);
+	});
 }
 
 ViewerExtChannel::~ViewerExtChannel()
@@ -40,7 +46,7 @@ void ViewerExtChannel::ResetConnection(bool allowFileClipboard)
 {
 	Disconnect();
 
-	uint32_t mask = 0;
+	uint32_t mask = ChannelBit(kChVideo);
 	if (allowFileClipboard) {
 		if (!m_fileClip) {
 			fileclip::Callbacks cb;

@@ -1758,6 +1758,9 @@
     <ClCompile Include="..\common\ExtChannel.cpp" />
     <ClCompile Include="..\common\FileClipProto.cpp" />
     <ClCompile Include="..\common\FileClipboard.cpp" />
+    <ClCompile Include="..\common\VideoProto.cpp" />
+    <ClCompile Include="ClientConnectionVideo.cpp" />
+    <ClCompile Include="VideoDecoder.cpp" />
     <ClCompile Include="ClientConnectionExt.cpp" />
     <ClCompile Include="Daemon.cpp">
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -2392,6 +2395,8 @@
     <ClInclude Include="..\common\ExtChannel.h" />
     <ClInclude Include="..\common\FileClipProto.h" />
     <ClInclude Include="..\common\FileClipboard.h" />
+    <ClInclude Include="..\common\VideoProto.h" />
+    <ClInclude Include="VideoDecoder.h" />
     <ClInclude Include="ClientConnectionExt.h" />
     <ClInclude Include="Daemon.h" />
     <ClInclude Include="..\rfb\dh.h" />

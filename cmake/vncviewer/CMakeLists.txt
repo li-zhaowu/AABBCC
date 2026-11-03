@@ -16,6 +16,8 @@ find_package(libjpeg-turbo CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(zstd CONFIG REQUIRED)
 find_package(LibLZMA REQUIRED)
+# NV12 -> BGRA conversion for video mode.
+find_package(libyuv CONFIG REQUIRED)
 
 set(${PROJECT_NAME}_SOURCES
     ../DSMPlugin/DSMPlugin.cpp
@@ -24,6 +26,7 @@ set(${PROJECT_NAME}_SOURCES
     ../common/ExtChannel.cpp
     ../common/FileClipProto.cpp
     ../common/FileClipboard.cpp
+    ../common/VideoProto.cpp
     ../common/Hyperlinks.cpp
     ../common/UltraVncZ.cpp
     ../common/mnemonic.c
@@ -39,6 +42,8 @@ set(${PROJECT_NAME}_SOURCES
     ClientConnectionCacheRect.cpp
     ClientConnectionClipboard.cpp
     ClientConnectionExt.cpp
+    ClientConnectionVideo.cpp
+    VideoDecoder.cpp
     ClientConnectionCoRRE.cpp
     ClientConnectionCopyRect.cpp
     ClientConnectionCursor.cpp
@@ -93,6 +98,7 @@ target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/../vncviewer/res/vnc
 set_source_files_properties(${CMAKE_SOURCE_DIR}/../vncviewer/res/vncviewer.rc LANGUAGE RC)
 target_compile_definitions(${PROJECT_NAME} PRIVATE NDEBUG WIN32 _WINDOWS __NT__ _WINSTATIC __WIN32__ _VIEWER _XZ _VCPKG NOMINMAX)
 target_link_libraries(${PROJECT_NAME}
+    PRIVATE yuv mfplat mfuuid
     PRIVATE JPEG::JPEG
     PRIVATE $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
     PRIVATE ZLIB::ZLIB

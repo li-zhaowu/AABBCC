@@ -18,6 +18,7 @@
 #include <memory>
 
 namespace fileclip { class FileClipboard; }
+class vncVideoStreamer;
 
 class vncClient;
 class VSocket;
@@ -59,6 +60,8 @@ private:
 	bool m_openedForClient = false;
 	// File copy and paste (channel kChFileClip); null if not allowed.
 	std::unique_ptr<fileclip::FileClipboard> m_fileClip;
+	// Video mode (channel kChVideo); null without an NVIDIA encoder.
+	std::unique_ptr<vncVideoStreamer> m_video;
 };
 
 // When the server runs as a service (LocalSystem in the user's session), the
