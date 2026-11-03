@@ -27,7 +27,7 @@ std::vector<uint8_t> EncodeStart(const Start& s)
 {
 	std::vector<uint8_t> v;
 	v.push_back(s.codec);
-	v.push_back(0);
+	v.push_back(s.flags);
 	PutU16(v, s.maxFps);
 	PutU32(v, s.maxBitrateKbps);
 	PutU16(v, s.maxWidth);
@@ -40,6 +40,7 @@ bool DecodeStart(const uint8_t* p, size_t len, Start& out)
 	if (len < 12)
 		return false;
 	out.codec = p[0];
+	out.flags = p[1];
 	out.maxFps = GetU16(p + 2);
 	out.maxBitrateKbps = GetU32(p + 4);
 	out.maxWidth = GetU16(p + 8);

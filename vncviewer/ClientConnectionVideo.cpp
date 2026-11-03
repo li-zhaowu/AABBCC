@@ -99,8 +99,6 @@ void ClientConnection::ToggleVideoMode()
 		problem = L"The server does not offer video mode.\n\n"
 		          L"Video mode needs the new UltraVNC server on a machine with an NVIDIA GPU "
 		          L"and a current NVIDIA driver (see the server log for details).";
-	else if (m_windowRequested)
-		problem = L"Leave single window mode first.";
 	else if (!FramebufferIsBgra32(m_myFormat))
 		problem = L"Video mode needs the \"Full colors\" (32 bit) pixel format.\n\n"
 		          L"Change it in the connection options and try again.";
@@ -120,10 +118,16 @@ void ClientConnection::ToggleVideoMode()
 		? video::kCodecHevc : video::kCodecH264;
 	m_videoNeedKey = true;
 	m_videoRequested = true;
+	// Showing one window: the server only takes the parameters, then the
+	// window is selected again to be sent as video.
+	if (m_windowRequested)
+		start.flags |= video::kStartParamsOnly;
 	if (!SendVideoMessage(video::kStart, video::EncodeStart(start))) {
 		m_videoRequested = false;
 		return;
 	}
+	if (m_windowRequested)
+		SelectWindowTransport();
 	CheckMenuItem(GetSystemMenu(m_hwndMain, FALSE), ID_VIDEOMODE, MF_BYCOMMAND | MF_CHECKED);
 	VideoLog(1, std::string("requested, ") + (start.codec == video::kCodecHevc ? "HEVC" : "H.264"));
 }
@@ -138,11 +142,15 @@ void ClientConnection::StopVideoMode(bool tellServer)
 	PostMessage(m_hwndcn, VideoCursorChangedMessage(), 0, 0);
 	if (tellServer)
 		SendVideoMessage(video::kStop, {});
+	// Showing one window as video: switch it back to lossless tiles. (When
+	// the server ended the video, it switched to tiles on its own.)
+	if (tellServer && m_windowRequested)
+		SelectWindowTransport();
 	CheckMenuItem(GetSystemMenu(m_hwndMain, FALSE), ID_VIDEOMODE, MF_BYCOMMAND | MF_UNCHECKED);
 	// Back to classic updates: one full picture, then incremental again.
 	// (When the server ended video mode, m_videoActive is already false but
 	// incremental requests were suppressed, so this request is needed too.)
-	if (wasActive || wasRequested)
+	if ((wasActive || wasRequested) && !m_windowRequested)
 		SendFullFramebufferUpdateRequest(true);
 	VideoLog(1, "stopped");
 }

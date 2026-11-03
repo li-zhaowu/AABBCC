@@ -45,11 +45,12 @@ int main()
 	s.maxBitrateKbps = 123456;
 	s.maxWidth = 3840;
 	s.maxHeight = 2160;
+	s.flags = kStartParamsOnly;
 	auto b = EncodeStart(s);
 	Start so;
 	CHECK(DecodeStart(b.data(), b.size(), so));
 	CHECK(so.codec == kCodecHevc && so.maxFps == 30 && so.maxBitrateKbps == 123456 &&
-	      so.maxWidth == 3840 && so.maxHeight == 2160);
+	      so.maxWidth == 3840 && so.maxHeight == 2160 && so.flags == kStartParamsOnly);
 	CheckTruncations(s, EncodeStart, DecodeStart);
 	s.maxFps = 0;
 	b = EncodeStart(s);

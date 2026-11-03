@@ -67,8 +67,16 @@ enum StatusCode : uint32_t {
 constexpr uint16_t kDefaultFps         = 60;
 constexpr uint32_t kDefaultBitrateKbps = 20000;
 
+enum StartFlags : uint8_t {
+	// Only remember the parameters, do not stream the monitor: used when a
+	// single window is to be shown as video (the window session then feeds
+	// the encoder).
+	kStartParamsOnly = 0x01,
+};
+
 struct Start {
 	uint8_t codec = kCodecH264;
+	uint8_t flags = 0;
 	uint16_t maxFps = kDefaultFps;
 	uint32_t maxBitrateKbps = kDefaultBitrateKbps;
 	uint16_t maxWidth = 0;   // 0 = no limit

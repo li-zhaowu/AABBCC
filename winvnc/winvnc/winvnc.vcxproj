@@ -1420,6 +1420,7 @@ copy "$(OutDir)$(TargetName)$(TargetExt)" c:\uvnc\64\xp</Command>
     <ClCompile Include="..\..\common\FileClipboard.cpp" />
     <ClCompile Include="..\..\common\VideoProto.cpp" />
     <ClCompile Include="..\..\common\WindowProto.cpp" />
+    <ClCompile Include="..\..\common\RateController.cpp" />
     <ClCompile Include="vncWindowCapture.cpp" />
     <ClCompile Include="vncWindowSession.cpp" />
     <ClCompile Include="vncNvencEncoder.cpp" />
@@ -3254,6 +3255,7 @@ copy "$(OutDir)$(TargetName)$(TargetExt)" c:\uvnc\64\xp</Command>
     <ClInclude Include="..\..\common\FileClipboard.h" />
     <ClInclude Include="..\..\common\VideoProto.h" />
     <ClInclude Include="..\..\common\WindowProto.h" />
+    <ClInclude Include="..\..\common\RateController.h" />
     <ClInclude Include="vncWindowCapture.h" />
     <ClInclude Include="vncWindowSession.h" />
     <ClInclude Include="vncNvencEncoder.h" />

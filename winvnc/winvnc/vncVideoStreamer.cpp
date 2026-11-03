@@ -10,7 +10,9 @@
 #include "vncVideoStreamer.h"
 #include "vncVideoCapture.h"
 #include "vncNvencEncoder.h"
+#include "common/RateController.h"
 
+#include <dxgi.h>
 #include <mmsystem.h>
 
 #include <algorithm>
@@ -44,16 +46,38 @@ constexpr auto kRecoverTimeout = std::chrono::seconds(5);
 constexpr auto kAreaCheckInterval = std::chrono::seconds(1);
 constexpr auto kStatsInterval = std::chrono::seconds(10);
 
-// Bitrate adaptation (AIMD): checked twice a second; on congestion the rate
-// drops by 30 %, after 2 s without congestion it grows by 5 % of the
-// maximum. Congestion = frames skipped because the send queue was full, or
-// the round-trip time 150 ms above the lowest seen (data waiting in TCP
-// buffers somewhere on the path).
-constexpr auto kRateInterval = std::chrono::milliseconds(500);
-constexpr auto kRateGrowDelay = std::chrono::seconds(2);
-constexpr auto kBaseRttRefresh = std::chrono::seconds(30);
-constexpr uint32_t kMinKbps = 1000;
-constexpr uint32_t kRttMarginUs = 150000;
+// Bitrate adaptation: common/RateController.
+constexpr uint32_t kMinKbps = RateController::kMinKbps;
+
+// D3D11 device on the first NVIDIA adapter (for the external stream, which
+// has no capture device of its own).
+bool CreateNvidiaDevice(ID3D11Device** device, ID3D11DeviceContext** context, std::string& error)
+{
+	IDXGIFactory1* factory = nullptr;
+	if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) {
+		error = "CreateDXGIFactory1 failed";
+		return false;
+	}
+	IDXGIAdapter1* adapter = nullptr;
+	bool ok = false;
+	for (UINT i = 0; !ok && factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+		DXGI_ADAPTER_DESC1 desc;
+		if (SUCCEEDED(adapter->GetDesc1(&desc)) && desc.VendorId == 0x10DE)
+			ok = SUCCEEDED(D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+				NULL, 0, D3D11_SDK_VERSION, device, NULL, context));
+		adapter->Release();
+	}
+	factory->Release();
+	if (!ok)
+		error = "no usable NVIDIA GPU for the window video";
+	return ok;
+}
+
+// Skip encoding while more than about three frames wait to be sent.
+size_t QueueBudget(uint32_t kbps, int fps)
+{
+	return (std::max)(size_t(256 * 1024), size_t(kbps) * 1000 / 8 / fps * 3);
+}
 
 } // namespace
 
@@ -108,7 +132,16 @@ void vncVideoStreamer::OnMessage(uint8_t subtype, std::vector<uint8_t>& payload)
 			SendStatus(kStatusBadRequest, "malformed start request");
 			return;
 		}
+		{
+			std::lock_guard<std::mutex> lk(m_mutex);
+			m_lastStart = start;
+			m_haveStart = true;
+		}
+		if (start.flags & kStartParamsOnly)
+			return; // a window session will use them (BeginExternal)
+		std::lock_guard<std::mutex> control(m_controlMutex);
 		StopThread();
+		m_external = false;
 		{
 			std::lock_guard<std::mutex> lk(m_mutex);
 			m_stop = false;
@@ -117,10 +150,17 @@ void vncVideoStreamer::OnMessage(uint8_t subtype, std::vector<uint8_t>& payload)
 		m_thread = std::thread(&vncVideoStreamer::ThreadMain, this, start);
 		break;
 	}
-	case kStop:
+	case kStop: {
+		std::lock_guard<std::mutex> control(m_controlMutex);
 		StopThread();
+		m_external = false;
+		{
+			std::lock_guard<std::mutex> lk(m_mutex);
+			m_haveStart = false; // video mode is off: no window video either
+		}
 		SendStatus(kStatusStopped, "");
 		break;
+	}
 	case kFeedback: {
 		Feedback fb;
 		if (DecodeFeedback(payload.data(), payload.size(), fb) && (fb.flags & kFeedbackKeyframe)) {
@@ -147,7 +187,56 @@ void vncVideoStreamer::StopThread()
 
 void vncVideoStreamer::Shutdown()
 {
+	std::lock_guard<std::mutex> control(m_controlMutex);
 	StopThread();
+	m_external = false;
+}
+
+bool vncVideoStreamer::BeginExternal()
+{
+	Start start;
+	{
+		std::lock_guard<std::mutex> lk(m_mutex);
+		if (!m_haveStart)
+			return false;
+		start = m_lastStart;
+	}
+	std::lock_guard<std::mutex> control(m_controlMutex);
+	StopThread(); // the monitor stream, if any
+	{
+		std::lock_guard<std::mutex> lk(m_mutex);
+		m_stop = false;
+		m_wantKeyframe = false;
+	}
+	{
+		std::lock_guard<std::mutex> lk(m_frameMutex);
+		m_frameReady = false;
+	}
+	m_external = true;
+	m_thread = std::thread(&vncVideoStreamer::ExternalThreadMain, this, start);
+	return true;
+}
+
+void vncVideoStreamer::EndExternal()
+{
+	std::lock_guard<std::mutex> control(m_controlMutex);
+	if (!m_external)
+		return;
+	StopThread();
+	m_external = false;
+}
+
+void vncVideoStreamer::PushFrame(const uint8_t* bgra, int width, int height, int stride)
+{
+	if (width <= 0 || height <= 0)
+		return;
+	std::lock_guard<std::mutex> lk(m_frameMutex);
+	m_framePixels.resize(size_t(width) * height * 4);
+	for (int y = 0; y < height; ++y)
+		memcpy(&m_framePixels[size_t(y) * width * 4], bgra + size_t(y) * stride, size_t(width) * 4);
+	m_frameWidth = width;
+	m_frameHeight = height;
+	m_frameReady = true;
 }
 
 void vncVideoStreamer::ThreadMain(Start start)
@@ -156,11 +245,7 @@ void vncVideoStreamer::ThreadMain(Start start)
 	const uint32_t bitrateKbps = std::clamp<uint32_t>(start.maxBitrateKbps, kMinKbps, 200000);
 	uint8_t codec = start.codec == kCodecHevc ? kCodecHevc : kCodecH264;
 	const auto interval = std::chrono::microseconds(1000000 / fps);
-	// Start at half the maximum and probe upwards: over the internet the
-	// maximum is often too much, and too much means lag.
-	uint32_t currentKbps = (std::max)(kMinKbps, bitrateKbps / 2);
-	// Skip encoding while more than about three frames wait to be sent.
-	auto queueBudget = [&] { return std::max<size_t>(256 * 1024, size_t(currentKbps) * 1000 / 8 / fps * 3); };
+	RateController rate(bitrateKbps, Clock::now());
 
 	timeBeginPeriod(1); // 1 ms sleep resolution for the frame pacing
 
@@ -187,13 +272,13 @@ void vncVideoStreamer::ThreadMain(Start start)
 			return false;
 		if (!encoder.IsOpen() || encoder.Width() != (capture.Width() & ~1) ||
 		    encoder.Height() != (capture.Height() & ~1)) {
-			bool opened = encoder.Open(capture.Device(), capture.Width(), capture.Height(), fps, currentKbps,
+			bool opened = encoder.Open(capture.Device(), capture.Width(), capture.Height(), fps, rate.Current(),
 				codec, error);
 			if (!opened && codec == kCodecHevc) {
 				// Older GPUs have no HEVC encoder: fall back to H.264.
 				Log(1, "HEVC not available (" + error + "), using H.264");
 				codec = kCodecH264;
-				opened = encoder.Open(capture.Device(), capture.Width(), capture.Height(), fps, currentKbps,
+				opened = encoder.Open(capture.Device(), capture.Width(), capture.Height(), fps, rate.Current(),
 					codec, error);
 			}
 			if (!opened)
@@ -242,11 +327,7 @@ void vncVideoStreamer::ThreadMain(Start start)
 	auto next = Clock::now();
 	auto nextAreaCheck = next + kAreaCheckInterval;
 	auto nextStats = next + kStatsInterval;
-	auto nextRateCheck = next + kRateInterval;
-	auto lastDecrease = next;
-	auto nextBaseRefresh = next + kBaseRttRefresh;
-	uint32_t baseRtt = 0;
-	uint32_t sent = 0, skipped = 0, skippedSinceRateCheck = 0;
+	uint32_t sent = 0, skipped = 0;
 	uint64_t bytes = 0;
 
 	for (;;) {
@@ -279,44 +360,22 @@ void vncVideoStreamer::ThreadMain(Start start)
 			nextStats = now + kStatsInterval;
 			Log(2, "sent " + std::to_string(sent) + " frames (" + std::to_string(bytes / 1024) +
 				" KB), skipped " + std::to_string(skipped) + " in the last 10 s, " +
-				std::to_string(currentKbps) + " kbps, rtt " +
+				std::to_string(rate.Current()) + " kbps, rtt " +
 				std::to_string(m_cb.rttMicros ? m_cb.rttMicros() / 1000 : 0) + " ms");
 			sent = skipped = 0;
 			bytes = 0;
 		}
 
-		if (now >= nextRateCheck) {
-			nextRateCheck = now + kRateInterval;
-			const uint32_t rtt = m_cb.rttMicros ? m_cb.rttMicros() : 0;
-			if (rtt != 0 && (baseRtt == 0 || rtt < baseRtt))
-				baseRtt = rtt;
-			const bool rttHigh = rtt != 0 && baseRtt != 0 && rtt > baseRtt + kRttMarginUs;
-			const bool congested = skippedSinceRateCheck > 0 || rttHigh;
-			skippedSinceRateCheck = 0;
-			uint32_t target = currentKbps;
-			if (congested) {
-				target = (std::max)(kMinKbps, currentKbps * 7 / 10);
-				lastDecrease = now;
-			} else if (now - lastDecrease >= kRateGrowDelay) {
-				target = (std::min)(bitrateKbps, currentKbps + std::max<uint32_t>(250, bitrateKbps / 20));
-				// The route may have changed: re-learn the base RTT now and then,
-				// but only while the link is calm.
-				if (now >= nextBaseRefresh) {
-					nextBaseRefresh = now + kBaseRttRefresh;
-					baseRtt = rtt;
-				}
-			}
-			if (target != currentKbps && encoder.SetBitrate(target)) {
-				Log(2, std::string(congested ? "congestion" : "probing") + ": " + std::to_string(currentKbps) +
-					" -> " + std::to_string(target) + " kbps");
-				currentKbps = target;
-			}
+		if (rate.Update(now, m_cb.rttMicros ? m_cb.rttMicros() : 0) && encoder.SetBitrate(rate.Target())) {
+			Log(2, std::string(rate.LastWasCongestion() ? "congestion" : "probing") + ": " +
+				std::to_string(rate.Current()) + " -> " + std::to_string(rate.Target()) + " kbps");
+			rate.Accept();
 		}
 
 		// Network behind: drop this frame before encoding.
-		if (m_cb.queuedVideoBytes && m_cb.queuedVideoBytes() > queueBudget()) {
+		if (m_cb.queuedVideoBytes && m_cb.queuedVideoBytes() > QueueBudget(rate.Current(), fps)) {
 			++skipped;
-			++skippedSinceRateCheck;
+			rate.FrameSkipped();
 			continue;
 		}
 
@@ -369,5 +428,173 @@ void vncVideoStreamer::ThreadMain(Start start)
 
 	encoder.Close();
 	capture.Release();
+	timeEndPeriod(1);
+}
+
+// Single window as video: encode the canvases pushed by the window session.
+// Same pacing, rate control, back pressure and keyframe handling as the
+// monitor stream; the picture always starts at the framebuffer origin (the
+// viewer's framebuffer is the window canvas).
+void vncVideoStreamer::ExternalThreadMain(Start start)
+{
+	const int fps = std::clamp<int>(start.maxFps, 1, 120);
+	const uint32_t bitrateKbps = std::clamp<uint32_t>(start.maxBitrateKbps, kMinKbps, 200000);
+	uint8_t codec = start.codec == kCodecHevc ? kCodecHevc : kCodecH264;
+	const auto interval = std::chrono::microseconds(1000000 / fps);
+	RateController rate(bitrateKbps, Clock::now());
+	std::string error;
+
+	auto fail = [&](uint32_t code, const std::string& message) {
+		SendStatus(code, message);
+		if (m_cb.onExternalFailed)
+			m_cb.onExternalFailed();
+	};
+
+	ID3D11Device* device = nullptr;
+	ID3D11DeviceContext* context = nullptr;
+	if (!CreateNvidiaDevice(&device, &context, error)) {
+		fail(kStatusUnsupported, error);
+		return;
+	}
+	timeBeginPeriod(1);
+
+	vncNvencEncoder encoder;
+	ID3D11Texture2D* texture = nullptr; // the canvas on the GPU
+	std::vector<uint8_t> pixels;
+	int width = 0, height = 0;
+	bool pending = false;     // pixels not yet encoded
+	bool havePicture = false; // texture holds a picture
+	bool forceIdr = true;
+	uint32_t streamId = 0, frameNo = 0;
+	auto next = Clock::now();
+
+	for (;;) {
+		{
+			std::unique_lock<std::mutex> lk(m_mutex);
+			m_cond.wait_until(lk, next, [&] { return m_stop; });
+			if (m_stop)
+				break;
+		}
+		const auto now = Clock::now();
+		next += interval;
+		if (next < now)
+			next = now + interval;
+
+		if (rate.Update(now, m_cb.rttMicros ? m_cb.rttMicros() : 0) && encoder.IsOpen() &&
+		    encoder.SetBitrate(rate.Target())) {
+			Log(2, std::string(rate.LastWasCongestion() ? "congestion" : "probing") + ": " +
+				std::to_string(rate.Current()) + " -> " + std::to_string(rate.Target()) + " kbps");
+			rate.Accept();
+		}
+
+		{
+			std::lock_guard<std::mutex> lk(m_frameMutex);
+			if (m_frameReady) {
+				pixels.swap(m_framePixels);
+				width = m_frameWidth;
+				height = m_frameHeight;
+				m_frameReady = false;
+				pending = true;
+			}
+		}
+		bool idr = forceIdr;
+		{
+			std::lock_guard<std::mutex> lk(m_mutex);
+			idr = idr || m_wantKeyframe;
+			m_wantKeyframe = false;
+		}
+		if (!pending && !(idr && havePicture))
+			continue; // nothing changed
+
+		if (m_cb.queuedVideoBytes && m_cb.queuedVideoBytes() > QueueBudget(rate.Current(), fps)) {
+			rate.FrameSkipped();
+			if (idr) {
+				std::lock_guard<std::mutex> lk(m_mutex);
+				m_wantKeyframe = true; // keep the request
+			}
+			continue; // the pending picture is sent later (or a newer one)
+		}
+
+		if (pending) {
+			const int w = width & ~1, h = height & ~1; // 4:2:0 needs even sizes
+			if (w < 16 || h < 16) {
+				pending = false;
+				continue;
+			}
+			if (!encoder.IsOpen() || encoder.Width() != w || encoder.Height() != h) {
+				encoder.Close();
+				if (texture) {
+					texture->Release();
+					texture = nullptr;
+				}
+				D3D11_TEXTURE2D_DESC td = {};
+				td.Width = w;
+				td.Height = h;
+				td.MipLevels = 1;
+				td.ArraySize = 1;
+				td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+				td.SampleDesc.Count = 1;
+				td.Usage = D3D11_USAGE_DEFAULT;
+				td.BindFlags = D3D11_BIND_RENDER_TARGET;
+				if (FAILED(device->CreateTexture2D(&td, NULL, &texture))) {
+					fail(kStatusEncoderError, "CreateTexture2D for the window video failed");
+					break;
+				}
+				bool opened = encoder.Open(device, w, h, fps, rate.Current(), codec, error);
+				if (!opened && codec == kCodecHevc) {
+					Log(1, "HEVC not available (" + error + "), using H.264");
+					codec = kCodecH264;
+					opened = encoder.Open(device, w, h, fps, rate.Current(), codec, error);
+				}
+				if (!opened) {
+					fail(kStatusEncoderError, error);
+					break;
+				}
+				Config cfg;
+				streamId = m_nextStreamId++;
+				cfg.streamId = streamId;
+				cfg.codec = codec;
+				cfg.width = static_cast<uint16_t>(w);
+				cfg.height = static_cast<uint16_t>(h);
+				cfg.x = 0;
+				cfg.y = 0;
+				cfg.fps = static_cast<uint16_t>(fps);
+				cfg.bitrateKbps = encoder.BitrateKbps();
+				m_cb.send(kPrioControl, kConfig, EncodeConfig(cfg));
+				Log(1, "window video " + std::to_string(w) + "x" + std::to_string(h) + ", " +
+					std::to_string(cfg.bitrateKbps) + " kbps, " + (codec == kCodecHevc ? "HEVC" : "H.264"));
+				frameNo = 0;
+				idr = true;
+			}
+			D3D11_BOX box = { 0, 0, 0, static_cast<UINT>(w), static_cast<UINT>(h), 1 };
+			context->UpdateSubresource(texture, 0, &box, pixels.data(), static_cast<UINT>(width) * 4, 0);
+			havePicture = true;
+			pending = false;
+		}
+
+		std::vector<uint8_t> bitstream;
+		bool key = false;
+		const uint64_t t = NowUs();
+		if (!encoder.Encode(texture, idr, t, bitstream, key, error)) {
+			fail(kStatusEncoderError, error);
+			break;
+		}
+		forceIdr = false;
+		if (bitstream.empty())
+			continue;
+		FrameHeader fh;
+		fh.streamId = streamId;
+		fh.frameNo = frameNo++;
+		fh.captureTimeUs = t;
+		fh.flags = key ? kFrameKey : 0;
+		if (!m_cb.send(kPrioVideo, kFrame, EncodeFrame(fh, bitstream.data(), bitstream.size())))
+			break;
+	}
+
+	encoder.Close();
+	if (texture)
+		texture->Release();
+	context->Release();
+	device->Release();
 	timeEndPeriod(1);
 }

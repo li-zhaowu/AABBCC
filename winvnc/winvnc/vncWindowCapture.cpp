@@ -524,6 +524,10 @@ void vncWindowCapture::FindPopups(std::vector<HWND>& popups)
 
 bool vncWindowCapture::CaptureMainWithPrintWindow()
 {
+	// PrintWindow waits for the window to draw itself; a hung program would
+	// block this thread (and stopping the session) for good.
+	if (IsHungAppWindow(m_target))
+		return !m_main.empty(); // keep showing the last picture
 	RECT wr;
 	if (!GetWindowRect(m_target, &wr))
 		return false;

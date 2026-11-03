@@ -59,6 +59,12 @@ inline bool IsFinal(uint8_t s)
 	return s == kStateClosed || s == kStateUnavailable || s == kStateEnded || s == kStateRefused;
 }
 
+// How a window session sends its pictures.
+enum Transport : uint8_t {
+	kTransportTiles = 0, // lossless tiles on this channel
+	kTransportVideo = 1, // NVENC video on the video channel (video mode is on)
+};
+
 constexpr uint32_t kMaxListEntries = 1024;
 constexpr size_t kMaxText = 512;
 constexpr int kTileSize = 64;
@@ -102,8 +108,9 @@ struct FrameHeader {
 std::vector<uint8_t> EncodeList(const std::vector<Entry>& entries);
 bool DecodeList(const uint8_t* p, size_t len, std::vector<Entry>& out);
 
-std::vector<uint8_t> EncodeSelect(uint64_t handle);
-bool DecodeSelect(const uint8_t* p, size_t len, uint64_t& handle);
+std::vector<uint8_t> EncodeSelect(uint64_t handle, uint8_t transport = kTransportTiles);
+// A Select without the transport byte means tiles.
+bool DecodeSelect(const uint8_t* p, size_t len, uint64_t& handle, uint8_t& transport);
 
 std::vector<uint8_t> EncodeState(const State& s);
 bool DecodeState(const uint8_t* p, size_t len, State& out);

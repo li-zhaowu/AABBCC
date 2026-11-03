@@ -16,7 +16,9 @@
 
 #include "../../winvnc/winvnc/vncWindowSession.h"
 
+#include <atomic>
 #include <cstdio>
+#include <thread>
 #include <cstring>
 
 using namespace window;
@@ -187,9 +189,19 @@ struct FakeViewer {
 	}
 };
 
+// Deliver a message like the reader thread would: on another thread, while
+// this thread keeps pumping messages (the test windows live on it, and
+// PrintWindow needs them to answer).
 static void Send(vncWindowSession& s, uint8_t subtype, std::vector<uint8_t> p)
 {
-	s.OnMessage(subtype, p);
+	std::atomic<bool> done{false};
+	std::thread t([&] {
+		s.OnMessage(subtype, p);
+		done = true;
+	});
+	while (!done)
+		Pump(10);
+	t.join();
 }
 
 int main(int argc, char** argv)
@@ -218,6 +230,21 @@ int main(int argc, char** argv)
 	bool sessionStartCalled = false;
 	cb.onSessionStart = [&] { sessionStartCalled = true; };
 	cb.allowOwnProcess = true; // the test windows live in this process
+	// Video transport doubles (phase 3b).
+	bool videoAvailable = true;
+	int videoBegins = 0, videoEnds = 0;
+	std::atomic<int> videoPushes{0};
+	std::atomic<int> lastPushW{0};
+	cb.beginVideo = [&] {
+		if (videoAvailable)
+			++videoBegins;
+		return videoAvailable;
+	};
+	cb.pushVideo = [&](const uint8_t*, int w, int, int) {
+		lastPushW = w;
+		++videoPushes;
+	};
+	cb.endVideo = [&] { ++videoEnds; };
 	vncWindowSession session(cb);
 	viewer.session = &session;
 
@@ -306,6 +333,49 @@ int main(int argc, char** argv)
 	DestroyWindow(main);
 	CHECK(WaitFor([&] { return viewer.HasState(kStateClosed); }));
 	CHECK(!session.Active());
+
+	// 10. Video transport: the canvas goes to the encoder, only on changes.
+	HWND vid = MakeWindow(L"uvnc video window", WS_OVERLAPPEDWINDOW, NULL, 150, 120, 320, 240, RGB(10, 20, 30));
+	Pump(200);
+	viewer.ClearStates();
+	const int tileFramesBefore = viewer.frames;
+	Send(session, kSelect, EncodeSelect(reinterpret_cast<uintptr_t>(vid), kTransportVideo));
+	CHECK(WaitFor([&] { return viewer.HasState(kStateActive) && videoPushes > 0; }));
+	CHECK(videoBegins == 1 && lastPushW == viewer.w);
+	Pump(500);
+	const int pushesStatic = videoPushes;
+	Pump(500);
+	CHECK(videoPushes == pushesStatic); // static window: no new pictures
+	SetWindowLongPtrW(vid, GWLP_USERDATA, RGB(200, 100, 0));
+	InvalidateRect(vid, NULL, TRUE);
+	CHECK(WaitFor([&] { return videoPushes > pushesStatic; }));
+	CHECK(viewer.frames == tileFramesBefore); // no tiles while video works
+	std::printf("video transport: %d pictures pushed\n", videoPushes.load());
+
+	// The encoder fails: continue with tiles, starting with the whole canvas.
+	session.VideoFailed();
+	CHECK(WaitFor([&] { return viewer.frames > tileFramesBefore; }));
+	RECT vr;
+	GetWindowRect(vid, &vr);
+	POINT vc = { 0, 0 };
+	ClientToScreen(vid, &vc);
+	CHECK(WaitFor([&] { return viewer.Pixel(vc.x - vr.left + 100, vc.y - vr.top + 100) == 0xC86400; }));
+	Send(session, kSelect, EncodeSelect(0));
+	CHECK(videoEnds == 0); // fell back: the encoder was already gone
+
+	// 11. Video requested but not available: tiles from the start.
+	videoAvailable = false;
+	viewer.ClearStates();
+	const int before = viewer.frames;
+	Send(session, kSelect, EncodeSelect(reinterpret_cast<uintptr_t>(vid), kTransportVideo));
+	CHECK(WaitFor([&] { return viewer.HasState(kStateActive) && viewer.frames > before; }));
+	// And a video session that ends normally stops the encoder.
+	videoAvailable = true;
+	Send(session, kSelect, EncodeSelect(reinterpret_cast<uintptr_t>(vid), kTransportVideo));
+	CHECK(WaitFor([&] { return videoBegins == 2; }));
+	Send(session, kSelect, EncodeSelect(0));
+	CHECK(videoEnds == 1);
+	DestroyWindow(vid);
 
 	session.Shutdown();
 	if (g_failures) {

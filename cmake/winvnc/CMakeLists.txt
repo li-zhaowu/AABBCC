@@ -29,6 +29,7 @@ set(${PROJECT_NAME}_SOURCES
     ../../common/FileClipboard.cpp
     ../../common/VideoProto.cpp
     ../../common/WindowProto.cpp
+    ../../common/RateController.cpp
     ../../common/Hyperlinks.cpp
     ../../common/UltraVncZ.cpp
     ../../common/d3des.c

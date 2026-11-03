@@ -261,6 +261,11 @@ void vncServerExtChannel::OpenForClient()
 		vc.log = [this](int level, const std::string& msg) { Log(level, msg); };
 		vc.queuedVideoBytes = [this] { return QueuedBytes(kPrioVideo); };
 		vc.rttMicros = [this] { return RttMicros(); };
+		// The window video failed: the window session continues with tiles.
+		vc.onExternalFailed = [this] {
+			if (m_window)
+				m_window->VideoFailed();
+		};
 		vc.framebufferArea = [this](RECT* area, std::string* reason) -> uint32_t {
 			if (m_client->m_nScale != 1) {
 				*reason = "video mode does not work with server side scaling";
@@ -299,6 +304,16 @@ void vncServerExtChannel::OpenForClient()
 			// window mode.
 			omni_mutex_lock l(m_client->GetUpdateLock(), 261);
 			m_client->m_incr_rgn.clear();
+		};
+		// Video mode on: the window is sent as video by the video streamer.
+		wc.beginVideo = [this] { return m_video && m_video->BeginExternal(); };
+		wc.pushVideo = [this](const uint8_t* bgra, int w, int h, int stride) {
+			if (m_video)
+				m_video->PushFrame(bgra, w, h, stride);
+		};
+		wc.endVideo = [this] {
+			if (m_video)
+				m_video->EndExternal();
 		};
 		m_window.reset(new vncWindowSession(wc));
 		SetHandler(kChWindow, [this](uint8_t subtype, std::vector<uint8_t>& payload) {

@@ -182,8 +182,6 @@ void ClientConnection::ToggleWindowMode()
 	const wchar_t* problem = nullptr;
 	if (!m_ext->ChannelUsable(kChWindow))
 		problem = L"The server does not offer single window mode (it needs the new UltraVNC server).";
-	else if (m_videoRequested)
-		problem = L"Switch video mode off first.";
 	else if (!FramebufferIsBgra32(m_myFormat))
 		problem = L"Single window mode needs the \"Full colors\" (32 bit) pixel format.\n\n"
 		          L"Change it in the connection options and try again.";
@@ -195,10 +193,19 @@ void ClientConnection::ToggleWindowMode()
 	SendWindowMessage(window::kListReq, {});
 }
 
+// UI thread: tiles, or video when video mode is on (phase 3b). Sending it
+// again for the same window switches the transport.
+void ClientConnection::SelectWindowTransport()
+{
+	SendWindowMessage(window::kSelect, window::EncodeSelect(m_windowHandle,
+		m_videoRequested ? window::kTransportVideo : window::kTransportTiles));
+}
+
 // UI thread.
 void ClientConnection::LeaveWindowMode(bool tellServer)
 {
 	m_windowRequested = false;
+	m_windowHandle = 0;
 	if (tellServer)
 		SendWindowMessage(window::kSelect, window::EncodeSelect(0));
 	if (m_windowActive) {
@@ -206,6 +213,15 @@ void ClientConnection::LeaveWindowMode(bool tellServer)
 		ResizeLocalFramebuffer(m_windowSavedWidth, m_windowSavedHeight);
 		m_windowActive = false;
 		SendFullFramebufferUpdateRequest(true);
+	}
+	if (m_videoRequested) {
+		// Video mode is still on: back to the monitor stream.
+		m_videoActive = false;
+		m_videoNeedKey = true;
+		video::Start start;
+		start.codec = !m_videoForceSoftware && VideoDecoder::HardwareAvailable(video::kCodecHevc)
+			? video::kCodecHevc : video::kCodecH264;
+		SendVideoMessage(video::kStart, video::EncodeStart(start));
 	}
 	CheckMenuItem(GetSystemMenu(m_hwndMain, FALSE), ID_WINDOWMODE, MF_BYCOMMAND | MF_UNCHECKED);
 	WindowLog(1, "back to the desktop");
@@ -233,9 +249,10 @@ void ClientConnection::OnWindowModeEvent(WPARAM event, LPARAM param)
 			return;
 		m_windowRequested = true;
 		m_windowSession = 0; // set by the server's first State
+		m_windowHandle = list[i].handle;
 		CheckMenuItem(GetSystemMenu(m_hwndMain, FALSE), ID_WINDOWMODE, MF_BYCOMMAND | MF_CHECKED);
-		SendWindowMessage(window::kSelect, window::EncodeSelect(list[i].handle));
-		WindowLog(1, "selected \"" + list[i].title + "\"");
+		SelectWindowTransport();
+		WindowLog(1, "selected \"" + list[i].title + "\"" + (m_videoRequested ? " as video" : ""));
 		return;
 	}
 	if (event == kEventMinimized) {

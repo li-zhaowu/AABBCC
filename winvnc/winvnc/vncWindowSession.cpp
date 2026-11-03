@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 
 #ifdef _MSC_VER
 #pragma comment(lib, "dwmapi.lib")
@@ -25,8 +26,10 @@ using extmsg::kPrioVideo;
 
 namespace {
 
-// Office use: 30 pictures per second is plenty and keeps the CPU low.
+// Office use (tiles): 30 pictures per second is plenty and keeps the CPU
+// low. Video transport: up to 60, the encoder paces itself.
 constexpr auto kFrameInterval = std::chrono::milliseconds(33);
+constexpr auto kVideoFrameInterval = std::chrono::milliseconds(16);
 // Frames sent but not yet acknowledged by the viewer.
 constexpr uint32_t kMaxInFlight = 2;
 // Consecutive capture errors (outside desktop switches) before giving up.
@@ -212,8 +215,9 @@ void vncWindowSession::OnMessage(uint8_t subtype, std::vector<uint8_t>& payload)
 		break;
 	case kSelect: {
 		uint64_t handle = 0;
-		if (DecodeSelect(p, n, handle))
-			Select(handle);
+		uint8_t transport = kTransportTiles;
+		if (DecodeSelect(p, n, handle, transport))
+			Select(handle, transport);
 		break;
 	}
 	case kAck: {
@@ -238,7 +242,7 @@ void vncWindowSession::OnMessage(uint8_t subtype, std::vector<uint8_t>& payload)
 	}
 }
 
-void vncWindowSession::Select(uint64_t handle)
+void vncWindowSession::Select(uint64_t handle, uint8_t transport)
 {
 	const uint32_t old = m_sessionId.load();
 	const bool wasRunning = m_thread.joinable();
@@ -264,7 +268,8 @@ void vncWindowSession::Select(uint64_t handle)
 		std::lock_guard<std::mutex> lk(m_mutex);
 		m_stop = false;
 	}
-	m_thread = std::thread(&vncWindowSession::ThreadMain, this, hwnd, sid);
+	m_videoFailed = false;
+	m_thread = std::thread(&vncWindowSession::ThreadMain, this, hwnd, sid, transport == kTransportVideo);
 }
 
 void vncWindowSession::StopThread()
@@ -287,7 +292,7 @@ void vncWindowSession::Shutdown()
 	StopThread();
 }
 
-void vncWindowSession::ThreadMain(HWND target, uint32_t sessionId)
+void vncWindowSession::ThreadMain(HWND target, uint32_t sessionId, bool wantVideo)
 {
 	InputDesktop desk;
 	desk.Attach();
@@ -310,6 +315,11 @@ void vncWindowSession::ThreadMain(HWND target, uint32_t sessionId)
 		m_cb.onSessionStart();
 	SendState(sessionId, kStateActive, "");
 
+	// Video transport: the canvas goes to the encoder instead of tiles.
+	bool video = wantVideo && m_cb.beginVideo && m_cb.beginVideo();
+	if (wantVideo)
+		Log(1, video ? "sending the window as video" : "video not available, sending lossless tiles");
+
 	std::vector<uint8_t> prev; // last picture sent
 	int prevW = 0, prevH = 0;
 	uint32_t frameNo = 0;
@@ -321,7 +331,7 @@ void vncWindowSession::ThreadMain(HWND target, uint32_t sessionId)
 	for (;;) {
 		{
 			std::unique_lock<std::mutex> lk(m_mutex);
-			m_cond.wait_for(lk, kFrameInterval, [&] { return m_stop; });
+			m_cond.wait_for(lk, video ? kVideoFrameInterval : kFrameInterval, [&] { return m_stop; });
 			if (m_stop)
 				break;
 		}
@@ -375,6 +385,21 @@ void vncWindowSession::ThreadMain(HWND target, uint32_t sessionId)
 			prevW = w;
 			prevH = h;
 		}
+		if (video && m_videoFailed.exchange(false)) {
+			video = false;
+			prev.clear(); // the viewer has video pictures: send everything
+			Log(1, "video failed, continuing with lossless tiles");
+		}
+		if (video) {
+			// Push only changes; a static window costs nothing.
+			const size_t bytes = size_t(w) * h * 4;
+			if (prev.size() != bytes || memcmp(prev.data(), capture.Pixels(), bytes) != 0) {
+				m_cb.pushVideo(capture.Pixels(), w, h, capture.Stride());
+				prev.assign(capture.Pixels(), capture.Pixels() + bytes);
+			}
+			continue;
+		}
+
 		// Flow control: wait for the viewer, the next frame then carries
 		// everything that changed meanwhile.
 		if (frameNo - m_lastAck.load() >= kMaxInFlight)
@@ -398,6 +423,8 @@ void vncWindowSession::ThreadMain(HWND target, uint32_t sessionId)
 		prev.assign(capture.Pixels(), capture.Pixels() + size_t(w) * h * 4);
 	}
 
+	if (video && m_cb.endVideo)
+		m_cb.endVideo();
 	m_active = false;
 	if (endReason)
 		SendState(sessionId, endState, endReason);

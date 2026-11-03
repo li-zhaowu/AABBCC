@@ -60,9 +60,15 @@ static void TestMessages()
 	CHECK(DecodeList(b.data(), b.size(), lo) && lo[0].title.size() == kMaxText);
 
 	uint64_t h = 0;
+	uint8_t tr = 99;
 	b = EncodeSelect(0xFFFFFFFF12345678ull);
-	CHECK(DecodeSelect(b.data(), b.size(), h) && h == 0xFFFFFFFF12345678ull);
-	CHECK(!DecodeSelect(b.data(), 7, h));
+	CHECK(DecodeSelect(b.data(), b.size(), h, tr) && h == 0xFFFFFFFF12345678ull && tr == kTransportTiles);
+	CHECK(!DecodeSelect(b.data(), 7, h, tr));
+	CHECK(DecodeSelect(b.data(), 8, h, tr) && tr == kTransportTiles); // older form: no transport byte
+	b = EncodeSelect(42, kTransportVideo);
+	CHECK(DecodeSelect(b.data(), b.size(), h, tr) && h == 42 && tr == kTransportVideo);
+	b.back() = 7; // unknown transport
+	CHECK(!DecodeSelect(b.data(), b.size(), h, tr));
 
 	State st;
 	st.sessionId = 9;

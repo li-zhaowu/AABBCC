@@ -99,18 +99,20 @@ bool DecodeList(const uint8_t* p, size_t len, std::vector<Entry>& out)
 	return r.ok;
 }
 
-std::vector<uint8_t> EncodeSelect(uint64_t handle)
+std::vector<uint8_t> EncodeSelect(uint64_t handle, uint8_t transport)
 {
 	std::vector<uint8_t> v;
 	PutU64(v, handle);
+	v.push_back(transport);
 	return v;
 }
 
-bool DecodeSelect(const uint8_t* p, size_t len, uint64_t& handle)
+bool DecodeSelect(const uint8_t* p, size_t len, uint64_t& handle, uint8_t& transport)
 {
 	Reader r(p, len);
 	handle = r.U64();
-	return r.ok;
+	transport = len > 8 ? r.U8() : static_cast<uint8_t>(kTransportTiles);
+	return r.ok && transport <= kTransportVideo;
 }
 
 std::vector<uint8_t> EncodeState(const State& s)

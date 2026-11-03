@@ -40,6 +40,14 @@ public:
 		std::function<void()> onSessionStart;
 		// Tests only: also list and show windows of this process.
 		bool allowOwnProcess = false;
+
+		// Video transport (phase 3b, video mode on). beginVideo starts the
+		// encoder for pushed frames and returns false if it cannot (then
+		// tiles are used); pushVideo hands over a changed canvas; endVideo
+		// stops the encoder.
+		std::function<bool()> beginVideo;
+		std::function<void(const uint8_t* bgra, int width, int height, int stride)> pushVideo;
+		std::function<void()> endVideo;
 	};
 
 	explicit vncWindowSession(Callbacks cb);
@@ -64,10 +72,13 @@ public:
 	// of its pop-ups) has the keyboard focus.
 	void BeforeKey();
 
+	// The video transport failed (any thread): continue with tiles.
+	void VideoFailed() { m_videoFailed = true; }
+
 private:
-	void Select(uint64_t handle);
+	void Select(uint64_t handle, uint8_t transport);
 	void StopThread();
-	void ThreadMain(HWND target, uint32_t sessionId);
+	void ThreadMain(HWND target, uint32_t sessionId, bool wantVideo);
 	void SendState(uint32_t sessionId, uint8_t state, const std::string& message);
 	void SendList();
 	void Log(int level, const std::string& msg);
@@ -80,6 +91,7 @@ private:
 	std::atomic<bool> m_active{false};
 	std::atomic<uint32_t> m_sessionId{0};
 	std::atomic<uint32_t> m_lastAck{0};
+	std::atomic<bool> m_videoFailed{false};
 	uint32_t m_nextSessionId = 1;
 
 	// Published by the capture thread for input (guarded by m_mutex).

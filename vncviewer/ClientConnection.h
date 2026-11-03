@@ -551,6 +551,8 @@ private:
 	std::atomic<bool> m_windowRequested{false};  // a window was picked
 	std::atomic<bool> m_windowActive{false};     // the framebuffer is the window canvas
 	std::atomic<uint32_t> m_windowSession{0};
+	uint64_t m_windowHandle = 0;                 // the remote window shown (UI thread)
+	void SelectWindowTransport();               // re-send Select for the current window
 	int m_windowSavedWidth = 0;                  // desktop framebuffer size to go back to
 	int m_windowSavedHeight = 0;
 	omni_mutex m_windowMutex;
