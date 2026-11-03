@@ -36,8 +36,8 @@
   },
   {
     "File": "include/ffnvcodec/nvEncodeAPI.h",
-    "Source": "https://github.com/FFmpeg/nv-codec-headers/blob/n13.0.19.0/include/ffnvcodec/nvEncodeAPI.h",
-    "SHA256": "4fe4094541ef0f8a13249d97a8692dc5f835a6e9dd42eeadb3e2f7321d54dc7e"
+    "Source": "https://raw.githubusercontent.com/FFmpeg/nv-codec-headers/n12.2.72.0/include/ffnvcodec/nvEncodeAPI.h",
+    "SHA256": "4677a397e3ec5300a6b38bf49cba42bb63a922ab26f24bc63a05ed08857cba16"
   },
   {
     "File": "include/jconfig.h",
