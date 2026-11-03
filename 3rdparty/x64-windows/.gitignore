@@ -1,0 +1,7 @@
+# These are vendored Release dependencies, not locally generated build outputs.
+!lib/*.lib
+!bin/
+!bin/*.dll
+!share/
+!share/*/
+!share/*/copyright

@@ -1,0 +1,86 @@
+<Project>
+  <!-- Imported after project settings so hard-coded relative output paths are overridden. -->
+  <PropertyGroup>
+    <IntDir>$(AabbccBuildRoot)obj\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <OutDir>$(AabbccBuildRoot)bin\$(Platform)\$(Configuration)\</OutDir>
+    <VcpkgInstalledDir>$(AabbccBuildRoot)vcpkg_installed\</VcpkgInstalledDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)vc$(PlatformToolsetVersion).pdb</ProgramDataBaseFileName>
+      <PrecompiledHeaderOutputFile>$(IntDir)$(TargetName).pch</PrecompiledHeaderOutputFile>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+    </ClCompile>
+    <Midl>
+      <OutputDirectory>$(IntDir)</OutputDirectory>
+      <TypeLibraryName>$(IntDir)$(TargetName).tlb</TypeLibraryName>
+    </Midl>
+    <Bscmake><OutputFile>$(IntDir)$(TargetName).bsc</OutputFile></Bscmake>
+    <Link><ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile></Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(MSBuildProjectName)' == 'vncviewer' Or '$(MSBuildProjectName)' == 'winvnc'">
+    <PreLinkEvent>
+      <Command>cl /nologo /MT /Fo"$(IntDir)buildtime.obj" /Fd"$(IntDir)buildtime.pdb" /c buildtime.cpp</Command>
+    </PreLinkEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
+    <ResourceCompile><AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'authSSP' Or '$(MSBuildProjectName)' == 'MSLogonACL'">
+    <CustomBuild Update="buildtime.in">
+      <Command>cl /nologo /P /EP /Fi"$(IntDir)buildtime.h" "%(FullPath)"</Command>
+      <Outputs>$(IntDir)buildtime.h</Outputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemDefinitionGroup Condition="'$(MSBuildProjectName)' == 'logmessages'">
+    <CustomBuildStep>
+      <Command>pushd "$(IntDir)"
+mc -h . -r . "$(MSBuildProjectDirectory)\messages.mc"
+if errorlevel 1 exit /b 1
+rc -r -fo messages.res messages.rc
+if errorlevel 1 exit /b 1
+link -dll -manifest:no -noentry -out:"$(OutDir)logmessages.dll" messages.res
+if errorlevel 1 exit /b 1
+popd</Command>
+      <Outputs>$(IntDir)messages.res;$(IntDir)messages.rc;$(IntDir)messages.h;$(OutDir)logmessages.dll</Outputs>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <!-- Use the vendored x64 Release packages without invoking vcpkg. -->
+  <PropertyGroup Condition="'$(AabbccDependencyRoot)' != '' And '$(Platform)|$(Configuration)' == 'x64|Release'">
+    <VcpkgEnabled>false</VcpkgEnabled>
+    <VcpkgEnableManifest>false</VcpkgEnableManifest>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(AabbccDependencyRoot)' != '' And '$(Platform)|$(Configuration)' == 'x64|Release'">
+    <ClCompile><AdditionalIncludeDirectories>$(AabbccDependencyRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(AabbccDependencyRoot)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>zlib.lib;zstd.lib;lzma.lib;jpeg.lib;turbojpeg.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <!-- OSGeo4W's static minizip-ng library uses the DLL C runtime. -->
+  <ItemDefinitionGroup Condition="'$(Platform)|$(Configuration)' == 'x64|Release'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(AabbccSodiumRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(AabbccSodiumRoot)x64\Release\v143\dynamic;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libsodium.lib;libminizip.lib;bz2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64' And ('$(MSBuildProjectName)' == 'vncviewer' Or '$(MSBuildProjectName)' == 'winvnc')">
+    <PreLinkEvent>
+      <Command>cl /nologo /MD /Fo"$(IntDir)buildtime.obj" /Fd"$(IntDir)buildtime.pdb" /c buildtime.cpp</Command>
+    </PreLinkEvent>
+  </ItemDefinitionGroup>
+  <Target Name="AabbccCopyRuntimeDependencies" AfterTargets="Link"
+          Condition="'$(Configuration)|$(Platform)' == 'Release|x64' And ('$(MSBuildProjectName)' == 'vncviewer' Or '$(MSBuildProjectName)' == 'winvnc')">
+    <ItemGroup>
+      <AabbccRuntimeDll Include="$(AabbccSodiumRoot)x64\Release\v143\dynamic\libsodium.dll" />
+      <AabbccRuntimeDll Include="$(AabbccDependencyRoot)bin\bz2.dll;$(AabbccDependencyRoot)bin\zlib1.dll;$(AabbccDependencyRoot)bin\zstd.dll;$(AabbccDependencyRoot)bin\liblzma.dll;$(AabbccDependencyRoot)bin\jpeg62.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AabbccRuntimeDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

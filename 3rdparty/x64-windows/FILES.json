@@ -1,0 +1,322 @@
+[
+  {
+    "File": "bin/bz2.dll",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\bin\\bz2.dll",
+    "SHA256": "272fe8f64d42739fa14fcf3eb1bbc8430c9b728f3f2d9def2bd9101b9d78f872"
+  },
+  {
+    "File": "bin/jpeg62.dll",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\bin\\jpeg62.dll",
+    "SHA256": "cac53cf27621a0a3504031a2fb8e1c65acf00713b0ab98da08a67a7665c87bfe"
+  },
+  {
+    "File": "bin/liblzma.dll",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\bin\\liblzma.dll",
+    "SHA256": "32f47217e3ea30a7863479f9904618d2a7d71ef1653b396ccbf618d8657627ad"
+  },
+  {
+    "File": "bin/turbojpeg.dll",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\bin\\turbojpeg.dll",
+    "SHA256": "ae9cdd5732bcd899f31f13798b1795e34e222ee50e1048a0f375df2ab634fc4b"
+  },
+  {
+    "File": "bin/zlib1.dll",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\bin\\zlib1.dll",
+    "SHA256": "deedfc0c532a2348aba7770df010fab61208e7b01c0db60b12f856d2eb09543c"
+  },
+  {
+    "File": "bin/zstd.dll",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\bin\\zstd.dll",
+    "SHA256": "73196f2864a9a2ee5e556f4a444e6ac6e50d1d3a5b9a53f37d74e409e76f07b7"
+  },
+  {
+    "File": "include/bzlib.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\bzlib.h",
+    "SHA256": "06a27622fe4202e965b81ee1f8f8d40d8fc1ead47c61ebd421140e5986b3c588"
+  },
+  {
+    "File": "include/jconfig.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\jconfig.h",
+    "SHA256": "74d8fba9aef39efa879070682ae858d2a75268afa46bbef9dd56f1d16890f71e"
+  },
+  {
+    "File": "include/jerror.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\jerror.h",
+    "SHA256": "cac7d2a363027412fcc06a993623135fb644c70c250a1f8fc5bf0741255212e4"
+  },
+  {
+    "File": "include/jmorecfg.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\jmorecfg.h",
+    "SHA256": "fce3a180e48bb49a5f8f5965a840b34774e7f194a8b3ba9159c7d5d39b347835"
+  },
+  {
+    "File": "include/jpeglib.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\jpeglib.h",
+    "SHA256": "b51cc0cb5ac082465004dc89422ebda439b053fdffbcf6baf8a6336a3288759f"
+  },
+  {
+    "File": "include/lzma.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma.h",
+    "SHA256": "256a358b9b2e094341564918c1b048f6deeab90e6239c38e57c1a11e2e32f534"
+  },
+  {
+    "File": "include/lzma/base.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\base.h",
+    "SHA256": "d3232a21cc97cc7751fada7e03667757453b680c0757b740844a77f3d7516706"
+  },
+  {
+    "File": "include/lzma/bcj.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\bcj.h",
+    "SHA256": "6d71f9f6b7d465e42f31ba340351239a4beb6221b735f90abd52920022346cbd"
+  },
+  {
+    "File": "include/lzma/block.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\block.h",
+    "SHA256": "d62b1e56044a7be0991f1c421c8da1b3dba4b4b347583eac7d8a0f87300e3058"
+  },
+  {
+    "File": "include/lzma/check.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\check.h",
+    "SHA256": "79ef75b06fe389ccbc47ebeea1bb704157a58fe9710ddfbac8a62035359f9ae1"
+  },
+  {
+    "File": "include/lzma/container.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\container.h",
+    "SHA256": "2ae9f3be1e99fd06df6770dfb3e21d7986fbcc89b96be85e48216a687187cf2d"
+  },
+  {
+    "File": "include/lzma/delta.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\delta.h",
+    "SHA256": "db9db049ab07363921bf19320174afbab16a1b4d401f797a5b2232dcb89b9d64"
+  },
+  {
+    "File": "include/lzma/filter.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\filter.h",
+    "SHA256": "9f60ed0a63fd89d5889260e4187a7530242a0b50be124d0fdbf5c2b15167f4ad"
+  },
+  {
+    "File": "include/lzma/hardware.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\hardware.h",
+    "SHA256": "b4d37a2a708ef45ff6577dedc271d0cf05cf3836328c0389bd9cca0bd7e09e06"
+  },
+  {
+    "File": "include/lzma/index_hash.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\index_hash.h",
+    "SHA256": "45e48cce1df8031c572f5a28c30ed3d8852f05100dc505b1ab570f541e869623"
+  },
+  {
+    "File": "include/lzma/index.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\index.h",
+    "SHA256": "bf34ba7a66fe04b4efa6baa9dddf71db60895f29d32e920957e4ab7f54672cb0"
+  },
+  {
+    "File": "include/lzma/lzma12.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\lzma12.h",
+    "SHA256": "f4d9f7cb49e6736969a99eb1e768276c305b45f5a74a9c7b19c0c6279d8187fc"
+  },
+  {
+    "File": "include/lzma/stream_flags.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\stream_flags.h",
+    "SHA256": "beba70fa9d83dc6a7fcfae9b1f8d07b3b5acbbdc789f008e63da4206e2434acc"
+  },
+  {
+    "File": "include/lzma/version.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\version.h",
+    "SHA256": "757ad7bb07b5b0b99a339d81aa40dfa5cbf029dc52cf420cb91d65763d783dfb"
+  },
+  {
+    "File": "include/lzma/vli.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\lzma\\vli.h",
+    "SHA256": "1efbbbfc93d109aff5bc6ec025437bbf8b99410975d97244781e9a163fe50f4d"
+  },
+  {
+    "File": "include/minizip-ng/ioapi.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\ioapi.h",
+    "SHA256": "674fe9c7e628298771698363e07d792298083839e638e850cf628db3304f8d72"
+  },
+  {
+    "File": "include/minizip-ng/mz_compat.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_compat.h",
+    "SHA256": "5b92b66f28c548ec3842a55ea159558b220e58072a36605645103b34d17f2099"
+  },
+  {
+    "File": "include/minizip-ng/mz_crypt.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_crypt.h",
+    "SHA256": "5fa4710bc70ec5deccd1b114b665793346ce3617578e72f369e841282c3ac19a"
+  },
+  {
+    "File": "include/minizip-ng/mz_os.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_os.h",
+    "SHA256": "f993ae44dccc7f6d9e90939fa3191988c3ac118c3514783d76212c3be4f87b80"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm_buf.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm_buf.h",
+    "SHA256": "afd0ce590d1f2534d3382f20519ff8df6172913a37ce05929c5318fa063a1809"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm_bzip.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm_bzip.h",
+    "SHA256": "6b0858a20a4666819eaeae850c910908c2ef21b342bde27a7e21c920b7e2b304"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm_lzma.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm_lzma.h",
+    "SHA256": "e47ee0ad3f49fa0a55da1ea5c2a65af359ff28c4c9b05b08ba79b5050ba48af8"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm_mem.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm_mem.h",
+    "SHA256": "652a4d955cf42ad933e3f8bb3f9b6e9608e21310b6801e3a76cfdde9faa02c82"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm_os.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm_os.h",
+    "SHA256": "c9ae9d4110100ea12c83d20532bb00a82252f71b0242e5f62c114b19c8819d10"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm_pkcrypt.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm_pkcrypt.h",
+    "SHA256": "057faf040d966664c0cf883714ea5925b783dfb91e58013f9738f769581055fc"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm_split.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm_split.h",
+    "SHA256": "bd879c35a00559baf2bb87e748738a78b71548cd25251f3fb698546cfdf1fe9c"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm_wzaes.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm_wzaes.h",
+    "SHA256": "e8ae1d3b79a7d4ed3fef1f003a2d5a7d5aef69ac2a8aa86760239688cb7405c3"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm_zlib.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm_zlib.h",
+    "SHA256": "732d12ad068cb70c954542d194b7728507a04305de40486ec475f24f1cc727dc"
+  },
+  {
+    "File": "include/minizip-ng/mz_strm.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_strm.h",
+    "SHA256": "2cfcc0b2cdd228f5878fc043cd30fbc9098eef0d71d2eb32ce7473c19babe62b"
+  },
+  {
+    "File": "include/minizip-ng/mz_zip_rw.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_zip_rw.h",
+    "SHA256": "1bda5a6f139ad811cdd987563b87abf7b1f64cff736c1b79ae89bc1e5ea741be"
+  },
+  {
+    "File": "include/minizip-ng/mz_zip.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz_zip.h",
+    "SHA256": "cae83ddc7bc538d0719422a85106511e9cc6c026e311af2c8a94f9abecc44fef"
+  },
+  {
+    "File": "include/minizip-ng/mz.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\mz.h",
+    "SHA256": "a9caaec46103f5f1e4f6ab946c71c8f7bae5997172c055c973360a85a734b601"
+  },
+  {
+    "File": "include/minizip-ng/unzip.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\unzip.h",
+    "SHA256": "5effcfd6a0fb82c8d5657776ab49f1b10c637cf2b75845e6d10cf785881f4818"
+  },
+  {
+    "File": "include/minizip-ng/zip.h",
+    "Source": "O:\\OSGeo4W\\include\\minizip\\zip.h",
+    "SHA256": "ebaa0bd71307efcafb2c737c2002633dcaa7b08280fc7a95aae30e9862503991"
+  },
+  {
+    "File": "include/turbojpeg.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\turbojpeg.h",
+    "SHA256": "ebe6e99e43eaa17f2f47efe6dcd5c7bf08bc2feaab6670f6063fbddbc6cba654"
+  },
+  {
+    "File": "include/zconf.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\zconf.h",
+    "SHA256": "bfd95b321f2703c49945c2318ffad47baa82385a4c53d2663bdff75520de1a2d"
+  },
+  {
+    "File": "include/zdict.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\zdict.h",
+    "SHA256": "720af3323feeb189e6db89470056a027ffa27f6cc0198688f19f480f2f8c4a2b"
+  },
+  {
+    "File": "include/zlib.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\zlib.h",
+    "SHA256": "a980a0d104198a53cc220c51ab5856e5be901bec8a2d02e0ee79a8754219dfed"
+  },
+  {
+    "File": "include/zstd_errors.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\zstd_errors.h",
+    "SHA256": "130dae763d2e25dfbcdc3771df3b74c9adbe70531a2fb7763ce9d5579d5cc79b"
+  },
+  {
+    "File": "include/zstd.h",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\include\\zstd.h",
+    "SHA256": "3f36e8b8d29328d5c1e05bc5919dede4f6beb16388838bede5301980627067b4"
+  },
+  {
+    "File": "lib/bz2.lib",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\lib\\bz2.lib",
+    "SHA256": "632f76d8ae8b159402e079e5e98940c00f6d4c9dd0f41baaf84044f4b0626611"
+  },
+  {
+    "File": "lib/jpeg.lib",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\lib\\jpeg.lib",
+    "SHA256": "d6393e1d080b552fb91df5bd16299b98f1b152492a10d02dd881aff4ee8ed6f8"
+  },
+  {
+    "File": "lib/libminizip.lib",
+    "Source": "O:\\OSGeo4W\\lib\\libminizip.lib",
+    "SHA256": "022653a598a3da5440dbdd718cca80d89e848fb3592f8e0a9f17eb9d99d86cfe"
+  },
+  {
+    "File": "lib/lzma.lib",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\lib\\lzma.lib",
+    "SHA256": "4ccd6924eef707dfe0db11fa79a4b27c1f4ddf5a774ab979872bc41a60ec4488"
+  },
+  {
+    "File": "lib/turbojpeg.lib",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\lib\\turbojpeg.lib",
+    "SHA256": "f1bcf51e68aadb890a352e1b58b9e8076849d635e2e705b5bd9ba4b24044e8ed"
+  },
+  {
+    "File": "lib/zlib.lib",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\lib\\zlib.lib",
+    "SHA256": "d4f03574acb6e9ccec7f2bc18d26bb4eefe778c1b5da9a7c048a4ef1f2346095"
+  },
+  {
+    "File": "lib/zstd.lib",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\lib\\zstd.lib",
+    "SHA256": "11723d92273a3cf1eb4dba1a7a9a36136f961cf24f345907440cdbadefca52c2"
+  },
+  {
+    "File": "share/bzip2/copyright",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\share\\bzip2\\copyright",
+    "SHA256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3"
+  },
+  {
+    "File": "share/libjpeg-turbo/copyright",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\share\\libjpeg-turbo\\copyright",
+    "SHA256": "60c756742db3ad1913304e8b13f0e86e22e51adb50cc0b3333c163f7e45ceec1"
+  },
+  {
+    "File": "share/liblzma/copyright",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\share\\liblzma\\copyright",
+    "SHA256": "bcb02973ef6e87ea73d331b3a80df7748407f17efdb784b61b47e0e610d3bb5c"
+  },
+  {
+    "File": "share/minizip-ng/copyright",
+    "Source": "https://raw.githubusercontent.com/zlib-ng/minizip-ng/4.0.4/LICENSE",
+    "SHA256": "675181c03fc1302a1c8554c00f7be9bb420c5dbc9dcc2013433cec144413de03"
+  },
+  {
+    "File": "share/zlib/copyright",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\share\\zlib\\copyright",
+    "SHA256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243"
+  },
+  {
+    "File": "share/zstd/copyright",
+    "Source": "L:\\vcpkg\\installed\\x64-windows\\share\\zstd\\copyright",
+    "SHA256": "434dca949c6da7c500413aef694539fe37f867dd1a94d83d4ed1d260194e2660"
+  }
+]

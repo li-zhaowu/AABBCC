@@ -1,0 +1,5 @@
+# Preserve upstream dependency bytes and their recorded SHA-256 values.
+include/** -text
+share/** -text
+lib/** -text
+bin/** -text

@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <AabbccBuildRoot Condition="'$(AabbccBuildRoot)' == ''">Z:\AABBCC-build\</AabbccBuildRoot>
+    <AabbccDependencyRoot>$(MSBuildThisFileDirectory)3rdparty\x64-windows\</AabbccDependencyRoot>
+    <AabbccSodiumRoot>$(MSBuildThisFileDirectory)3rdparty\libsodium-1.0.22-stable\libsodium\</AabbccSodiumRoot>
+    <ForceImportBeforeCppTargets>$(MSBuildThisFileDirectory)BuildOutput.targets</ForceImportBeforeCppTargets>
+  </PropertyGroup>
+</Project>

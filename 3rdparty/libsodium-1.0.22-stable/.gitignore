@@ -1,0 +1,5 @@
+# Keep the two upstream binary files required by the local Release build.
+!libsodium/x64/
+!libsodium/x64/Release/
+!libsodium/x64/Release/v143/dynamic/libsodium.lib
+!libsodium/x64/Release/v143/dynamic/libsodium.dll
