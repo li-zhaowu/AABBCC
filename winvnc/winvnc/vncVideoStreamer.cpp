@@ -44,6 +44,17 @@ constexpr auto kRecoverTimeout = std::chrono::seconds(5);
 constexpr auto kAreaCheckInterval = std::chrono::seconds(1);
 constexpr auto kStatsInterval = std::chrono::seconds(10);
 
+// Bitrate adaptation (AIMD): checked twice a second; on congestion the rate
+// drops by 30 %, after 2 s without congestion it grows by 5 % of the
+// maximum. Congestion = frames skipped because the send queue was full, or
+// the round-trip time 150 ms above the lowest seen (data waiting in TCP
+// buffers somewhere on the path).
+constexpr auto kRateInterval = std::chrono::milliseconds(500);
+constexpr auto kRateGrowDelay = std::chrono::seconds(2);
+constexpr auto kBaseRttRefresh = std::chrono::seconds(30);
+constexpr uint32_t kMinKbps = 1000;
+constexpr uint32_t kRttMarginUs = 150000;
+
 } // namespace
 
 vncVideoStreamer::vncVideoStreamer(Callbacks cb) : m_cb(std::move(cb)) {}
@@ -142,11 +153,14 @@ void vncVideoStreamer::Shutdown()
 void vncVideoStreamer::ThreadMain(Start start)
 {
 	const int fps = std::clamp<int>(start.maxFps, 1, 120);
-	const uint32_t bitrateKbps = std::clamp<uint32_t>(start.maxBitrateKbps, 500, 200000);
-	const uint8_t codec = start.codec == kCodecHevc ? kCodecHevc : kCodecH264;
+	const uint32_t bitrateKbps = std::clamp<uint32_t>(start.maxBitrateKbps, kMinKbps, 200000);
+	uint8_t codec = start.codec == kCodecHevc ? kCodecHevc : kCodecH264;
 	const auto interval = std::chrono::microseconds(1000000 / fps);
+	// Start at half the maximum and probe upwards: over the internet the
+	// maximum is often too much, and too much means lag.
+	uint32_t currentKbps = std::max(kMinKbps, bitrateKbps / 2);
 	// Skip encoding while more than about three frames wait to be sent.
-	const size_t queueBudget = std::max<size_t>(256 * 1024, size_t(bitrateKbps) * 1000 / 8 / fps * 3);
+	auto queueBudget = [&] { return std::max<size_t>(256 * 1024, size_t(currentKbps) * 1000 / 8 / fps * 3); };
 
 	timeBeginPeriod(1); // 1 ms sleep resolution for the frame pacing
 
@@ -173,7 +187,16 @@ void vncVideoStreamer::ThreadMain(Start start)
 			return false;
 		if (!encoder.IsOpen() || encoder.Width() != (capture.Width() & ~1) ||
 		    encoder.Height() != (capture.Height() & ~1)) {
-			if (!encoder.Open(capture.Device(), capture.Width(), capture.Height(), fps, bitrateKbps, codec, error))
+			bool opened = encoder.Open(capture.Device(), capture.Width(), capture.Height(), fps, currentKbps,
+				codec, error);
+			if (!opened && codec == kCodecHevc) {
+				// Older GPUs have no HEVC encoder: fall back to H.264.
+				Log(1, "HEVC not available (" + error + "), using H.264");
+				codec = kCodecH264;
+				opened = encoder.Open(capture.Device(), capture.Width(), capture.Height(), fps, currentKbps,
+					codec, error);
+			}
+			if (!opened)
 				return false;
 		}
 		Config cfg;
@@ -219,7 +242,11 @@ void vncVideoStreamer::ThreadMain(Start start)
 	auto next = Clock::now();
 	auto nextAreaCheck = next + kAreaCheckInterval;
 	auto nextStats = next + kStatsInterval;
-	uint32_t sent = 0, skipped = 0;
+	auto nextRateCheck = next + kRateInterval;
+	auto lastDecrease = next;
+	auto nextBaseRefresh = next + kBaseRttRefresh;
+	uint32_t baseRtt = 0;
+	uint32_t sent = 0, skipped = 0, skippedSinceRateCheck = 0;
 	uint64_t bytes = 0;
 
 	for (;;) {
@@ -251,14 +278,45 @@ void vncVideoStreamer::ThreadMain(Start start)
 		if (now >= nextStats) {
 			nextStats = now + kStatsInterval;
 			Log(2, "sent " + std::to_string(sent) + " frames (" + std::to_string(bytes / 1024) +
-				" KB), skipped " + std::to_string(skipped) + " in the last 10 s");
+				" KB), skipped " + std::to_string(skipped) + " in the last 10 s, " +
+				std::to_string(currentKbps) + " kbps, rtt " +
+				std::to_string(m_cb.rttMicros ? m_cb.rttMicros() / 1000 : 0) + " ms");
 			sent = skipped = 0;
 			bytes = 0;
 		}
 
+		if (now >= nextRateCheck) {
+			nextRateCheck = now + kRateInterval;
+			const uint32_t rtt = m_cb.rttMicros ? m_cb.rttMicros() : 0;
+			if (rtt != 0 && (baseRtt == 0 || rtt < baseRtt))
+				baseRtt = rtt;
+			const bool rttHigh = rtt != 0 && baseRtt != 0 && rtt > baseRtt + kRttMarginUs;
+			const bool congested = skippedSinceRateCheck > 0 || rttHigh;
+			skippedSinceRateCheck = 0;
+			uint32_t target = currentKbps;
+			if (congested) {
+				target = std::max(kMinKbps, currentKbps * 7 / 10);
+				lastDecrease = now;
+			} else if (now - lastDecrease >= kRateGrowDelay) {
+				target = std::min(bitrateKbps, currentKbps + std::max<uint32_t>(250, bitrateKbps / 20));
+				// The route may have changed: re-learn the base RTT now and then,
+				// but only while the link is calm.
+				if (now >= nextBaseRefresh) {
+					nextBaseRefresh = now + kBaseRttRefresh;
+					baseRtt = rtt;
+				}
+			}
+			if (target != currentKbps && encoder.SetBitrate(target)) {
+				Log(2, std::string(congested ? "congestion" : "probing") + ": " + std::to_string(currentKbps) +
+					" -> " + std::to_string(target) + " kbps");
+				currentKbps = target;
+			}
+		}
+
 		// Network behind: drop this frame before encoding.
-		if (m_cb.queuedVideoBytes && m_cb.queuedVideoBytes() > queueBudget) {
+		if (m_cb.queuedVideoBytes && m_cb.queuedVideoBytes() > queueBudget()) {
 			++skipped;
+			++skippedSinceRateCheck;
 			continue;
 		}
 
@@ -271,6 +329,10 @@ void vncVideoStreamer::ThreadMain(Start start)
 			}
 			continue;
 		}
+
+		video::Cursor cursor;
+		if (capture.TakePointerUpdate(cursor))
+			m_cb.send(kPrioControl, kCursor, EncodeCursor(cursor));
 
 		bool idr = forceIdr;
 		{

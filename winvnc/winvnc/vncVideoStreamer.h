@@ -36,6 +36,9 @@ public:
 		std::function<void(int level, const std::string&)> log;
 		// Bytes of video waiting in the extension channel's send queue.
 		std::function<size_t()> queuedVideoBytes;
+		// Smoothed round-trip time of the connection in microseconds (0 =
+		// not measured yet). Rising RTT means data piles up in the network.
+		std::function<uint32_t()> rttMicros;
 		// The framebuffer the viewer sees, in screen coordinates. Returns 0,
 		// or a video::StatusCode if video mode cannot be used (for example
 		// kStatusScaling while server side scaling is active).

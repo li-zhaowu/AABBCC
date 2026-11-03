@@ -1760,6 +1760,7 @@
     <ClCompile Include="..\common\FileClipboard.cpp" />
     <ClCompile Include="..\common\VideoProto.cpp" />
     <ClCompile Include="ClientConnectionVideo.cpp" />
+    <ClCompile Include="VideoCursor.cpp" />
     <ClCompile Include="VideoDecoder.cpp" />
     <ClCompile Include="ClientConnectionExt.cpp" />
     <ClCompile Include="Daemon.cpp">
@@ -2396,6 +2397,7 @@
     <ClInclude Include="..\common\FileClipProto.h" />
     <ClInclude Include="..\common\FileClipboard.h" />
     <ClInclude Include="..\common\VideoProto.h" />
+    <ClInclude Include="VideoCursor.h" />
     <ClInclude Include="VideoDecoder.h" />
     <ClInclude Include="ClientConnectionExt.h" />
     <ClInclude Include="Daemon.h" />

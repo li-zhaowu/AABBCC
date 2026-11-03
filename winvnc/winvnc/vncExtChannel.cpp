@@ -34,6 +34,8 @@ vncServerExtChannel::vncServerExtChannel(vncClient* client)
 	// so that screen updates are not held back on slow links (64 KB is about
 	// 60 ms at 1 MB/s).
 	SetBatchBudget(64 * 1024);
+	// Video mode adapts its bitrate to the round-trip time; measure it often.
+	SetPingInterval(std::chrono::milliseconds(500));
 }
 
 vncServerExtChannel::~vncServerExtChannel()
@@ -105,6 +107,7 @@ void vncServerExtChannel::OpenForClient()
 		};
 		vc.log = [this](int level, const std::string& msg) { Log(level, msg); };
 		vc.queuedVideoBytes = [this] { return QueuedBytes(kPrioVideo); };
+		vc.rttMicros = [this] { return RttMicros(); };
 		vc.framebufferArea = [this](RECT* area, std::string* reason) -> uint32_t {
 			if (m_client->m_nScale != 1) {
 				*reason = "video mode does not work with server side scaling";

@@ -19,6 +19,9 @@
 #include <dxgi1_2.h>
 
 #include <string>
+#include <vector>
+
+#include "common/VideoProto.h"
 
 class vncVideoCapture {
 public:
@@ -52,6 +55,11 @@ public:
 	// True if some DXGI adapter is an NVIDIA GPU.
 	static bool HasNvidiaAdapter();
 
+	// The mouse pointer shape or visibility changed since the last call:
+	// fills `out` (kCursorHidden when the pointer is not shown) and returns
+	// true. The picture itself never contains the pointer.
+	bool TakePointerUpdate(video::Cursor& out);
+
 private:
 	bool AttachToInputDesktop();
 
@@ -62,4 +70,12 @@ private:
 	RECT m_outputRect = {};
 	bool m_hasPicture = false;
 	HDESK m_desktop = NULL;
+
+	// Mouse pointer.
+	bool m_pointerDirty = false;
+	bool m_pointerVisible = false;
+	bool m_pointerVisibleKnown = false;
+	bool m_hasShape = false;
+	DXGI_OUTDUPL_POINTER_SHAPE_INFO m_shapeInfo = {};
+	std::vector<uint8_t> m_shape;
 };

@@ -16,6 +16,7 @@
 //   Feedback  viewer -> server  progress and "please send a keyframe"
 //   Stop      viewer -> server  back to the classic (office) mode
 //   Status    server -> viewer  video mode ended or was refused, and why
+//   Cursor    server -> viewer  the remote mouse pointer shape changed
 //
 // While video mode is active the viewer stops asking for framebuffer
 // updates, so the server sends only video. The video picture covers one
@@ -37,6 +38,7 @@ enum Subtype : uint8_t {
 	kFeedback = 4,
 	kStop     = 5,
 	kStatus   = 6,
+	kCursor   = 7,
 };
 
 enum Codec : uint8_t {
@@ -99,6 +101,23 @@ struct Feedback {
 	uint8_t flags = 0;
 };
 
+enum CursorType : uint8_t {
+	kCursorHidden     = 0, // no pointer (e.g. games): show none
+	kCursorMonochrome = 1, // 1 bpp AND mask rows, then XOR mask rows (2 x height rows)
+	kCursorColor      = 2, // 32 bpp BGRA with straight alpha
+};
+constexpr uint16_t kMaxCursorSize = 256;
+
+struct Cursor {
+	uint8_t type = kCursorHidden;
+	uint16_t hotX = 0;
+	uint16_t hotY = 0;
+	uint16_t width = 0;
+	uint16_t height = 0;     // visible height (monochrome data has 2x rows)
+	uint32_t pitch = 0;      // bytes per row in data
+	std::vector<uint8_t> data;
+};
+
 struct Status {
 	uint32_t code = 0;
 	std::string message; // UTF-8, for logs and the user
@@ -116,6 +135,9 @@ bool DecodeFrameHeader(const uint8_t* p, size_t len, FrameHeader& out);
 
 std::vector<uint8_t> EncodeFeedback(const Feedback& f);
 bool DecodeFeedback(const uint8_t* p, size_t len, Feedback& out);
+
+std::vector<uint8_t> EncodeCursor(const Cursor& c);
+bool DecodeCursor(const uint8_t* p, size_t len, Cursor& out);
 
 std::vector<uint8_t> EncodeStatus(const Status& s);
 bool DecodeStatus(const uint8_t* p, size_t len, Status& out);

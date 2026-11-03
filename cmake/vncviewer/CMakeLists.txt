@@ -43,6 +43,7 @@ set(${PROJECT_NAME}_SOURCES
     ClientConnectionClipboard.cpp
     ClientConnectionExt.cpp
     ClientConnectionVideo.cpp
+    VideoCursor.cpp
     VideoDecoder.cpp
     ClientConnectionCoRRE.cpp
     ClientConnectionCopyRect.cpp
@@ -98,7 +99,7 @@ target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/../vncviewer/res/vnc
 set_source_files_properties(${CMAKE_SOURCE_DIR}/../vncviewer/res/vncviewer.rc LANGUAGE RC)
 target_compile_definitions(${PROJECT_NAME} PRIVATE NDEBUG WIN32 _WINDOWS __NT__ _WINSTATIC __WIN32__ _VIEWER _XZ _VCPKG NOMINMAX)
 target_link_libraries(${PROJECT_NAME}
-    PRIVATE yuv mfplat mfuuid
+    PRIVATE yuv mfplat mfuuid d3d11
     PRIVATE JPEG::JPEG
     PRIVATE $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
     PRIVATE ZLIB::ZLIB

@@ -11,6 +11,8 @@
 
 #include <dxgi1_5.h>
 
+#include <algorithm>
+
 #ifdef _MSC_VER
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -208,6 +210,9 @@ void vncVideoCapture::Release()
 	SafeRelease(m_context);
 	SafeRelease(m_device);
 	m_hasPicture = false;
+	// A new duplication reports the current pointer again.
+	m_pointerVisibleKnown = false;
+	m_hasShape = false;
 	if (m_desktop) {
 		CloseDesktop(m_desktop);
 		m_desktop = NULL;
@@ -242,7 +247,87 @@ vncVideoCapture::Result vncVideoCapture::Acquire(UINT timeoutMs)
 			result = Result::Error;
 		}
 	}
+	// Pointer: visibility comes with every mouse update, the shape only when
+	// it changed. Both must be read before ReleaseFrame().
+	if (info.LastMouseUpdateTime.QuadPart != 0) {
+		const bool visible = info.PointerPosition.Visible != FALSE;
+		if (!m_pointerVisibleKnown || visible != m_pointerVisible) {
+			m_pointerVisible = visible;
+			m_pointerVisibleKnown = true;
+			m_pointerDirty = true;
+		}
+	}
+	if (info.PointerShapeBufferSize > 0) {
+		m_shape.resize(info.PointerShapeBufferSize);
+		UINT required = 0;
+		if (SUCCEEDED(m_dup->GetFramePointerShape(info.PointerShapeBufferSize, m_shape.data(), &required,
+				&m_shapeInfo))) {
+			m_hasShape = true;
+			m_pointerDirty = true;
+		}
+	}
+
 	res->Release();
 	m_dup->ReleaseFrame();
 	return result;
+}
+
+bool vncVideoCapture::TakePointerUpdate(video::Cursor& out)
+{
+	if (!m_pointerDirty)
+		return false;
+	out = video::Cursor();
+	if (!m_pointerVisible) {
+		m_pointerDirty = false;
+		out.type = video::kCursorHidden;
+		return true;
+	}
+	if (!m_hasShape)
+		return false; // visible, shape not known yet: wait for it
+
+	m_pointerDirty = false;
+	const UINT w = m_shapeInfo.Width;
+	const UINT pitch = m_shapeInfo.Pitch;
+	UINT h = m_shapeInfo.Height;
+	if (m_shapeInfo.Type == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME)
+		h /= 2; // AND mask rows followed by XOR mask rows
+	if (w == 0 || h == 0 || w > video::kMaxCursorSize || h > video::kMaxCursorSize)
+		return false;
+	out.width = static_cast<uint16_t>(w);
+	out.height = static_cast<uint16_t>(h);
+	out.hotX = static_cast<uint16_t>((std::min)(m_shapeInfo.HotSpot.x, static_cast<LONG>(w - 1)));
+	out.hotY = static_cast<uint16_t>((std::min)(m_shapeInfo.HotSpot.y, static_cast<LONG>(h - 1)));
+
+	if (m_shapeInfo.Type == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME) {
+		// Kept as masks so that inverting pointers (text I-beam) still invert.
+		out.type = video::kCursorMonochrome;
+		out.pitch = pitch;
+		out.data.assign(m_shape.begin(), m_shape.begin() + size_t(pitch) * h * 2);
+		return true;
+	}
+
+	out.type = video::kCursorColor;
+	out.pitch = w * 4;
+	out.data.resize(size_t(out.pitch) * h);
+	for (UINT y = 0; y < h; ++y) {
+		const uint8_t* src = m_shape.data() + size_t(y) * pitch;
+		uint8_t* dst = out.data.data() + size_t(y) * out.pitch;
+		for (UINT x = 0; x < w; ++x) {
+			uint8_t b = src[x * 4], g = src[x * 4 + 1], r = src[x * 4 + 2], a = src[x * 4 + 3];
+			if (m_shapeInfo.Type == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR) {
+				// Mask 0: replace the screen pixel. Mask 0xFF: XOR with it;
+				// XOR with black changes nothing, other colours are shown
+				// as they are (close enough for a pointer).
+				if (a == 0)
+					a = 0xFF;
+				else
+					a = (r | g | b) ? 0xFF : 0;
+			}
+			dst[x * 4] = b;
+			dst[x * 4 + 1] = g;
+			dst[x * 4 + 2] = r;
+			dst[x * 4 + 3] = a;
+		}
+	}
+	return true;
 }

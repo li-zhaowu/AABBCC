@@ -527,6 +527,14 @@ private:
 	void ResetVideoState();
 	void OnVideoMessage(uint8_t subtype, std::vector<uint8_t>& payload);
 	void BlitVideoPicture(const VideoDecoder::Picture& pic);
+	static UINT VideoCursorChangedMessage();
+	void SetVideoCursor(const video::Cursor& c);
+	void DestroyVideoCursors();
+	bool m_videoForceSoftware = false;           // GPU decoding failed once: stay in software
+	// Remote pointer shape in video mode (guarded by m_videoMutex).
+	HCURSOR m_videoCursor = NULL;                // NULL with m_videoCursorValid = hidden pointer
+	HCURSOR m_videoCursorOld = NULL;             // previous one, destroyed on the next change
+	std::atomic<bool> m_videoCursorValid{false};
 	std::unique_ptr<VideoDecoder> m_videoDecoder; // reader thread only
 	video::Config m_videoConfig;                 // reader thread only
 	bool m_videoNeedKey = true;                  // reader thread only

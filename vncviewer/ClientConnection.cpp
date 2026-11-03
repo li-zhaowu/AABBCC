@@ -4833,6 +4833,7 @@ ClientConnection::~ClientConnection()
 	// The sender thread uses the socket and crit; stop it first.
 	if (m_ext)
 		m_ext->Shutdown();
+	DestroyVideoCursors();
 
 	omni_mutex_lock l(m_bitmapdcMutex);
 	if (m_hwndStatus)
@@ -9803,6 +9804,13 @@ LRESULT CALLBACK ClientConnection::WndProchwnd(HWND hwnd, UINT iMsg, WPARAM wPar
 
 	if (_this == NULL && iMsg != WM_CREATE)
 		return DefWindowProc(hwnd, iMsg, wParam, lParam);
+	if (_this && iMsg == VideoCursorChangedMessage()) {
+		// Apply a new pointer shape at once if the mouse is over us.
+		POINT pt;
+		if (GetCursorPos(&pt) && WindowFromPoint(pt) == hwnd)
+			SendMessage(hwnd, WM_SETCURSOR, (WPARAM)hwnd, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
+		return 0;
+	}
 	switch (iMsg)
 			{
 			case WM_CREATE:
@@ -10130,6 +10138,12 @@ LRESULT CALLBACK ClientConnection::WndProchwnd(HWND hwnd, UINT iMsg, WPARAM wPar
 			{
 				// if we have the focus, let the cursor change as normal
 				if ((lParam & 0xffff) == HTCLIENT) {
+					// Video mode: show the remote pointer shape (or none).
+					if (_this->m_videoActive && _this->m_videoCursorValid) {
+						omni_mutex_lock l(_this->m_videoMutex);
+						SetCursor(_this->m_videoCursor);
+						return 0;
+					}
 					HCURSOR h;
 					// Load cursors from main executable, not language DLL
 					extern HINSTANCE hInstance;

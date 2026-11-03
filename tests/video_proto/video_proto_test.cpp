@@ -108,6 +108,44 @@ int main()
 	b = EncodeStatus(st);
 	CHECK(DecodeStatus(b.data(), b.size(), sto) && sto.message.size() == 1024);
 
+	// Cursor shapes.
+	Cursor cu;
+	cu.type = kCursorColor;
+	cu.width = 32;
+	cu.height = 32;
+	cu.hotX = 5;
+	cu.hotY = 6;
+	cu.pitch = 128;
+	cu.data.assign(128 * 32, 0x7F);
+	b = EncodeCursor(cu);
+	Cursor cuo;
+	CHECK(DecodeCursor(b.data(), b.size(), cuo));
+	CHECK(cuo.type == kCursorColor && cuo.width == 32 && cuo.hotY == 6 && cuo.data == cu.data);
+	CHECK(!DecodeCursor(b.data(), b.size() - 1, cuo)); // data size must match
+	Cursor mono;
+	mono.type = kCursorMonochrome;
+	mono.width = 32;
+	mono.height = 32;
+	mono.pitch = 4;
+	mono.data.assign(4 * 64, 0xFF); // AND + XOR rows
+	b = EncodeCursor(mono);
+	CHECK(DecodeCursor(b.data(), b.size(), cuo) && cuo.data.size() == 256);
+	mono.data.resize(4 * 32); // only one mask
+	b = EncodeCursor(mono);
+	CHECK(!DecodeCursor(b.data(), b.size(), cuo));
+	Cursor hidden;
+	b = EncodeCursor(hidden);
+	CHECK(DecodeCursor(b.data(), b.size(), cuo) && cuo.type == kCursorHidden);
+	cu.hotX = 40; // hotspot outside the shape
+	b = EncodeCursor(cu);
+	CHECK(!DecodeCursor(b.data(), b.size(), cuo));
+	cu.hotX = 5;
+	cu.width = 300; // too big
+	cu.pitch = 1200;
+	cu.data.assign(1200 * 32, 0);
+	b = EncodeCursor(cu);
+	CHECK(!DecodeCursor(b.data(), b.size(), cuo));
+
 	// Clipping of the picture into the framebuffer.
 	ClipResult r;
 	Config k;

@@ -122,6 +122,49 @@ bool DecodeFeedback(const uint8_t* p, size_t len, Feedback& out)
 	return true;
 }
 
+std::vector<uint8_t> EncodeCursor(const Cursor& c)
+{
+	std::vector<uint8_t> v;
+	v.push_back(c.type);
+	v.push_back(0);
+	PutU16(v, c.hotX);
+	PutU16(v, c.hotY);
+	PutU16(v, c.width);
+	PutU16(v, c.height);
+	PutU32(v, c.pitch);
+	v.insert(v.end(), c.data.begin(), c.data.end());
+	return v;
+}
+
+bool DecodeCursor(const uint8_t* p, size_t len, Cursor& out)
+{
+	if (len < 14)
+		return false;
+	out.type = p[0];
+	out.hotX = GetU16(p + 2);
+	out.hotY = GetU16(p + 4);
+	out.width = GetU16(p + 6);
+	out.height = GetU16(p + 8);
+	out.pitch = GetU32(p + 10);
+	out.data.assign(p + 14, p + len);
+	if (out.type == kCursorHidden)
+		return true;
+	if (out.width == 0 || out.height == 0 || out.width > kMaxCursorSize || out.height > kMaxCursorSize ||
+	    out.hotX >= out.width || out.hotY >= out.height)
+		return false;
+	size_t minPitch, rows;
+	if (out.type == kCursorMonochrome) {
+		minPitch = (out.width + 7) / 8;
+		rows = size_t(out.height) * 2;
+	} else if (out.type == kCursorColor) {
+		minPitch = size_t(out.width) * 4;
+		rows = out.height;
+	} else {
+		return false;
+	}
+	return out.pitch >= minPitch && out.pitch <= 4096 && out.data.size() == out.pitch * rows;
+}
+
 std::vector<uint8_t> EncodeStatus(const Status& s)
 {
 	std::vector<uint8_t> v;

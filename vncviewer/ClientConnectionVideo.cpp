@@ -19,6 +19,7 @@
 #include "ClientConnectionExt.h"
 #include "Exception.h"
 #include "VideoDecoder.h"
+#include "VideoCursor.h"
 #include "common/VideoProto.h"
 
 #include <libyuv.h> // vcpkg port "libyuv"
@@ -29,6 +30,45 @@ UINT ClientConnection::VideoModeEndedMessage()
 {
 	static const UINT msg = RegisterWindowMessageW(L"UltraVNC.VideoModeEnded");
 	return msg;
+}
+
+UINT ClientConnection::VideoCursorChangedMessage()
+{
+	static const UINT msg = RegisterWindowMessageW(L"UltraVNC.VideoCursorChanged");
+	return msg;
+}
+
+// Reader thread: turn the server's pointer shape into a cursor and make the
+// UI thread show it.
+void ClientConnection::SetVideoCursor(const video::Cursor& c)
+{
+	HCURSOR cursor = CreateCursorFromShape(c);
+	// kCursorHidden: NULL cursor.
+	if (c.type != video::kCursorHidden && !cursor)
+		return; // keep the previous one rather than showing nothing
+
+	{
+		omni_mutex_lock l(m_videoMutex);
+		// The UI thread may still be using the current cursor; destroy the
+		// one before it.
+		if (m_videoCursorOld)
+			DestroyCursor(m_videoCursorOld);
+		m_videoCursorOld = m_videoCursor;
+		m_videoCursor = cursor;
+	}
+	m_videoCursorValid = true;
+	PostMessage(m_hwndcn, VideoCursorChangedMessage(), 0, 0);
+}
+
+void ClientConnection::DestroyVideoCursors()
+{
+	omni_mutex_lock l(m_videoMutex);
+	m_videoCursorValid = false;
+	if (m_videoCursorOld)
+		DestroyCursor(m_videoCursorOld);
+	if (m_videoCursor)
+		DestroyCursor(m_videoCursor);
+	m_videoCursorOld = m_videoCursor = NULL;
 }
 
 static bool FramebufferIsBgra32(const rfbPixelFormat& f)
@@ -70,7 +110,12 @@ void ClientConnection::ToggleVideoMode()
 		return;
 	}
 
-	video::Start start; // H.264, 60 fps, 20 Mbps (design defaults)
+	video::Start start; // 60 fps, up to 20 Mbps (design defaults)
+	// HEVC gives better pictures per bit, but decoding it in software is
+	// heavy: ask for it only if this machine decodes it on the GPU. The
+	// server falls back to H.264 if its GPU cannot encode HEVC.
+	start.codec = !m_videoForceSoftware && VideoDecoder::HardwareAvailable(video::kCodecHevc)
+		? video::kCodecHevc : video::kCodecH264;
 	m_videoNeedKey = true;
 	m_videoRequested = true;
 	if (!SendVideoMessage(video::kStart, video::EncodeStart(start))) {
@@ -78,7 +123,7 @@ void ClientConnection::ToggleVideoMode()
 		return;
 	}
 	CheckMenuItem(GetSystemMenu(m_hwndMain, FALSE), ID_VIDEOMODE, MF_BYCOMMAND | MF_CHECKED);
-	VideoLog(1, "requested");
+	VideoLog(1, std::string("requested, ") + (start.codec == video::kCodecHevc ? "HEVC" : "H.264"));
 }
 
 // UI thread.
@@ -86,6 +131,9 @@ void ClientConnection::StopVideoMode(bool tellServer)
 {
 	const bool wasActive = m_videoActive.exchange(false);
 	const bool wasRequested = m_videoRequested.exchange(false);
+	// Back to the local cursor.
+	m_videoCursorValid = false;
+	PostMessage(m_hwndcn, VideoCursorChangedMessage(), 0, 0);
 	if (tellServer)
 		SendVideoMessage(video::kStop, {});
 	CheckMenuItem(GetSystemMenu(m_hwndMain, FALSE), ID_VIDEOMODE, MF_BYCOMMAND | MF_UNCHECKED);
@@ -127,6 +175,7 @@ void ClientConnection::ResetVideoState()
 {
 	m_videoActive = false;
 	m_videoRequested = false;
+	m_videoCursorValid = false;
 	if (m_hwndMain)
 		CheckMenuItem(GetSystemMenu(m_hwndMain, FALSE), ID_VIDEOMODE, MF_BYCOMMAND | MF_UNCHECKED);
 }
@@ -144,7 +193,7 @@ void ClientConnection::OnVideoMessage(uint8_t subtype, std::vector<uint8_t>& pay
 		if (!m_videoDecoder)
 			m_videoDecoder.reset(new VideoDecoder);
 		std::string error;
-		if (!m_videoDecoder->Open(cfg.codec, cfg.width, cfg.height, cfg.fps, error)) {
+		if (!m_videoDecoder->Open(cfg.codec, cfg.width, cfg.height, cfg.fps, !m_videoForceSoftware, error)) {
 			VideoLog(0, "decoder: " + error);
 			SendVideoMessage(video::kStop, {});
 			{
@@ -158,7 +207,9 @@ void ClientConnection::OnVideoMessage(uint8_t subtype, std::vector<uint8_t>& pay
 		m_videoNeedKey = true;
 		m_videoActive = true;
 		VideoLog(1, "stream " + std::to_string(cfg.streamId) + ": " + std::to_string(cfg.width) + "x" +
-			std::to_string(cfg.height) + " at " + std::to_string(cfg.x) + "," + std::to_string(cfg.y));
+			std::to_string(cfg.height) + " at " + std::to_string(cfg.x) + "," + std::to_string(cfg.y) + ", " +
+			(cfg.codec == video::kCodecHevc ? "HEVC" : "H.264") + ", " +
+			(m_videoDecoder->IsHardware() ? "GPU" : "software") + " decoding");
 		break;
 	}
 	case video::kFrame: {
@@ -177,12 +228,28 @@ void ClientConnection::OnVideoMessage(uint8_t subtype, std::vector<uint8_t>& pay
 		} else {
 			VideoLog(0, "decode error, asking for a keyframe: " + error);
 			m_videoNeedKey = true;
+			if (m_videoDecoder->IsHardware()) {
+				// Continue in software for the rest of this session.
+				m_videoForceSoftware = true;
+				std::string reopenError;
+				if (m_videoDecoder->Open(m_videoConfig.codec, m_videoConfig.width, m_videoConfig.height,
+						m_videoConfig.fps, false, reopenError))
+					VideoLog(0, "GPU decoding failed, switched to software decoding");
+				else
+					VideoLog(0, "software decoder: " + reopenError);
+			}
 			video::Feedback fb;
 			fb.streamId = h.streamId;
 			fb.lastFrameNo = h.frameNo;
 			fb.flags = video::kFeedbackKeyframe;
 			SendVideoMessage(video::kFeedback, video::EncodeFeedback(fb));
 		}
+		break;
+	}
+	case video::kCursor: {
+		video::Cursor c;
+		if (m_videoRequested && video::DecodeCursor(p, n, c))
+			SetVideoCursor(c);
 		break;
 	}
 	case video::kStatus: {

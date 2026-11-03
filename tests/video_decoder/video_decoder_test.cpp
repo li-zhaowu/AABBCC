@@ -70,14 +70,23 @@ int main(int argc, char** argv)
 	auto aus = SplitAccessUnits(data);
 	CHECK(aus.size() >= 10);
 
+	for (int pass = 0; pass < 2; ++pass) {
+	// Pass 0 allows GPU decoding (falls back to software where there is no
+	// usable GPU, e.g. under Wine); pass 1 forces software decoding.
+	const bool allowHw = pass == 0;
 	VideoDecoder dec;
 	std::string err;
-	CHECK(dec.Open(video::kCodecH264, w, h, 30, err));
+	CHECK(dec.Open(video::kCodecH264, w, h, 30, allowHw, err));
 	if (!err.empty())
 		std::fprintf(stderr, "open: %s\n", err.c_str());
+	std::printf("pass %d: %s decoding\n", pass, dec.IsHardware() ? "GPU" : "software");
+	if (!allowHw)
+		CHECK(!dec.IsHardware());
 
 	int pictures = 0, firstPictureAfter = -1;
+	bool fellBack = false;
 	for (size_t i = 0; i < aus.size(); ++i) {
+		std::string decodeError;
 		const bool ok = dec.Decode(aus[i].data(), aus[i].size(), static_cast<int64_t>(i) * 333333,
 			[&](const VideoDecoder::Picture& p) {
 				if (pictures++ == 0) {
@@ -94,9 +103,20 @@ int main(int argc, char** argv)
 				CHECK(Near(y, wantY, 4));
 				CHECK(Near(u, wantU, 4));
 				CHECK(Near(v, wantV, 4));
-			}, err);
+			}, decodeError);
+		if (!ok && dec.IsHardware() && !fellBack) {
+			// What the viewer does: GPU decoding failed, continue in
+			// software from the next keyframe (here: the start).
+			std::printf("GPU decoding failed (%s), falling back to software\n", decodeError.c_str());
+			fellBack = true;
+			CHECK(dec.Open(video::kCodecH264, w, h, 30, false, err));
+			pictures = 0;
+			firstPictureAfter = -1;
+			i = static_cast<size_t>(-1);
+			continue;
+		}
 		if (!ok)
-			std::fprintf(stderr, "decode %zu: %s\n", i, err.c_str());
+			std::fprintf(stderr, "decode %zu: %s\n", i, decodeError.c_str());
 		CHECK(ok);
 	}
 	std::printf("%zu access units, %d pictures, first picture after unit %d\n", aus.size(), pictures,
@@ -108,6 +128,9 @@ int main(int argc, char** argv)
 	std::vector<uint8_t> junk(1000, 0x55);
 	junk[0] = 0; junk[1] = 0; junk[2] = 0; junk[3] = 1; junk[4] = 0x65;
 	dec.Decode(junk.data(), junk.size(), 0, [](const VideoDecoder::Picture&) {}, err);
+	}
+	std::printf("GPU H.264 decoding available: %s\n",
+		VideoDecoder::HardwareAvailable(video::kCodecH264) ? "yes" : "no");
 
 	if (g_failures) {
 		std::fprintf(stderr, "%d check(s) failed\n", g_failures);

@@ -10,17 +10,22 @@
 #include "VideoDecoder.h"
 #include "common/VideoProto.h"
 
+#include <d3d11.h>
+#include <d3d10.h> // ID3D10Multithread
 #include <mfapi.h>
 #include <mferror.h>
 #include <mfidl.h>
 #include <mftransform.h>
 
+#include <map>
 #include <mutex>
+#include <thread>
 
 #ifdef _MSC_VER
 #pragma comment(lib, "mfplat.lib")
 #pragma comment(lib, "mfuuid.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "d3d11.lib")
 #endif
 
 namespace {
@@ -51,7 +56,33 @@ bool StartMediaFoundation()
 
 } // namespace
 
-bool VideoDecoder::Open(uint8_t codec, int width, int height, int fps, std::string& error)
+bool VideoDecoder::SetupD3D(std::string& error)
+{
+	const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0,
+		D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0 };
+	HRESULT hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+		levels, ARRAYSIZE(levels), D3D11_SDK_VERSION, &m_device, NULL, &m_context);
+	if (FAILED(hr)) {
+		error = Hr("D3D11CreateDevice (video)", hr);
+		return false;
+	}
+	// The decoder uses the device from its own threads.
+	ID3D10Multithread* mt = nullptr;
+	if (SUCCEEDED(m_device->QueryInterface(__uuidof(ID3D10Multithread), reinterpret_cast<void**>(&mt)))) {
+		mt->SetMultithreadProtected(TRUE);
+		mt->Release();
+	}
+	hr = MFCreateDXGIDeviceManager(&m_resetToken, &m_dxgiManager);
+	if (SUCCEEDED(hr))
+		hr = m_dxgiManager->ResetDevice(m_device, m_resetToken);
+	if (FAILED(hr)) {
+		error = Hr("MFCreateDXGIDeviceManager", hr);
+		return false;
+	}
+	return true;
+}
+
+bool VideoDecoder::Open(uint8_t codec, int width, int height, int fps, bool allowHardware, std::string& error)
 {
 	Close();
 	// The reader thread calls us; give it a COM apartment once. It is never
@@ -92,9 +123,26 @@ bool VideoDecoder::Open(uint8_t codec, int width, int height, int fps, std::stri
 	}
 
 	IMFAttributes* attrs = nullptr;
+	UINT32 d3d11Aware = 0;
 	if (SUCCEEDED(m_mft->GetAttributes(&attrs))) {
 		attrs->SetUINT32(MF_LOW_LATENCY, TRUE); // output each picture at once
+		d3d11Aware = MFGetAttributeUINT32(attrs, MF_SA_D3D11_AWARE, 0);
 		attrs->Release();
+	}
+
+	// GPU decoding: hand the decoder a D3D11 device (before the media types).
+	if (allowHardware && d3d11Aware) {
+		std::string d3dError;
+		if (SetupD3D(d3dError) &&
+		    SUCCEEDED(m_mft->ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, reinterpret_cast<ULONG_PTR>(m_dxgiManager)))) {
+			m_hardware = true;
+		} else {
+			if (m_dxgiManager)
+				m_mft->ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, 0);
+			SafeRelease(m_dxgiManager);
+			SafeRelease(m_context);
+			SafeRelease(m_device);
+		}
 	}
 
 	IMFMediaType* inType = nullptr;
@@ -127,6 +175,90 @@ void VideoDecoder::Close()
 		m_mft->ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
 	}
 	SafeRelease(m_mft);
+	SafeRelease(m_staging);
+	m_stagingWidth = m_stagingHeight = 0;
+	SafeRelease(m_dxgiManager);
+	SafeRelease(m_context);
+	SafeRelease(m_device);
+	m_hardware = false;
+	m_gpuVerified = false;
+}
+
+bool VideoDecoder::DeliverGpuPicture(ID3D11Texture2D* tex, UINT subresource, const PictureFn& onPicture)
+{
+	D3D11_TEXTURE2D_DESC d;
+	tex->GetDesc(&d);
+	if (d.Format != DXGI_FORMAT_NV12)
+		return false;
+	if (!m_staging || m_stagingWidth != d.Width || m_stagingHeight != d.Height) {
+		SafeRelease(m_staging);
+		D3D11_TEXTURE2D_DESC sd = {};
+		sd.Width = d.Width;
+		sd.Height = d.Height;
+		sd.MipLevels = 1;
+		sd.ArraySize = 1;
+		sd.Format = DXGI_FORMAT_NV12;
+		sd.SampleDesc.Count = 1;
+		sd.Usage = D3D11_USAGE_STAGING;
+		sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		if (FAILED(m_device->CreateTexture2D(&sd, NULL, &m_staging)))
+			return false;
+		m_stagingWidth = d.Width;
+		m_stagingHeight = d.Height;
+	}
+	// The decoder's textures are slices of one array; copy ours out.
+	m_context->CopySubresourceRegion(m_staging, 0, 0, 0, 0, tex, subresource, NULL);
+	D3D11_MAPPED_SUBRESOURCE map;
+	if (FAILED(m_context->Map(m_staging, 0, D3D11_MAP_READ, 0, &map)))
+		return false;
+	Picture pic;
+	pic.y = static_cast<const uint8_t*>(map.pData);
+	pic.uv = pic.y + static_cast<size_t>(map.RowPitch) * d.Height;
+	pic.pitch = static_cast<int>(map.RowPitch);
+	pic.width = (std::min)(m_width, static_cast<int>(d.Width));
+	pic.height = (std::min)(m_height, static_cast<int>(d.Height));
+
+	// The copy above cannot report errors. A broken read-back (seen with
+	// some drivers and emulators) gives an all-zero picture, which a real
+	// stream cannot produce: limited range video has Y >= 16 and U, V
+	// around 128 even for black. Check the first picture.
+	if (!m_gpuVerified) {
+		bool allZero = true;
+		for (int i = 0; i < 16 && allZero; ++i) {
+			const int x = (pic.width - 1) * (i % 4) / 3, yy = (pic.height - 1) * (i / 4) / 3;
+			if (pic.y[size_t(yy) * pic.pitch + x] != 0 || pic.uv[size_t(yy / 2) * pic.pitch + (x & ~1)] != 0)
+				allZero = false;
+		}
+		if (allZero) {
+			m_context->Unmap(m_staging, 0);
+			return false;
+		}
+		m_gpuVerified = true;
+	}
+	onPicture(pic);
+	m_context->Unmap(m_staging, 0);
+	return true;
+}
+
+bool VideoDecoder::HardwareAvailable(uint8_t codec)
+{
+	static std::mutex mutex;
+	static std::map<uint8_t, bool> cache;
+	std::lock_guard<std::mutex> lk(mutex);
+	auto it = cache.find(codec);
+	if (it != cache.end())
+		return it->second;
+	// On a helper thread: Open() puts the calling thread into the COM
+	// multithreaded apartment, which the UI thread must not be.
+	bool hw = false;
+	std::thread probe([&] {
+		VideoDecoder d;
+		std::string error;
+		hw = d.Open(codec, 1920, 1080, 60, true, error) && d.IsHardware();
+	});
+	probe.join();
+	cache[codec] = hw;
+	return hw;
 }
 
 bool VideoDecoder::SelectOutputType(std::string& error)
@@ -242,7 +374,33 @@ bool VideoDecoder::DrainOutput(const PictureFn& onPicture, std::string& error)
 
 		IMFSample* result = out.pSample;
 		IMFMediaBuffer* mb = nullptr;
-		if (result && SUCCEEDED(result->ConvertToContiguousBuffer(&mb))) {
+		bool delivered = false;
+		// GPU decoding: the picture is a D3D11 texture.
+		if (m_hardware && result && SUCCEEDED(result->GetBufferByIndex(0, &mb))) {
+			IMFDXGIBuffer* dxgi = nullptr;
+			if (SUCCEEDED(mb->QueryInterface(__uuidof(IMFDXGIBuffer), reinterpret_cast<void**>(&dxgi)))) {
+				ID3D11Texture2D* tex = nullptr;
+				UINT sub = 0;
+				if (SUCCEEDED(dxgi->GetResource(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex))) &&
+				    SUCCEEDED(dxgi->GetSubresourceIndex(&sub))) {
+					delivered = DeliverGpuPicture(tex, sub, onPicture);
+					if (!delivered) {
+						tex->Release();
+						dxgi->Release();
+						mb->Release();
+						if (result != outSample)
+							SafeRelease(result);
+						SafeRelease(outSample);
+						error = "could not read the GPU decoded picture";
+						return false;
+					}
+				}
+				SafeRelease(tex);
+				dxgi->Release();
+			}
+			SafeRelease(mb);
+		}
+		if (!delivered && result && SUCCEEDED(result->ConvertToContiguousBuffer(&mb))) {
 			BYTE* base = nullptr;
 			LONG pitch = 0;
 			IMF2DBuffer* b2 = nullptr;

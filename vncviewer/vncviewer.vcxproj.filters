@@ -90,6 +90,9 @@
     <ClCompile Include="ClientConnectionVideo.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="VideoCursor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="VideoDecoder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -237,6 +240,9 @@
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="..\common\VideoProto.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="VideoCursor.h">
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="VideoDecoder.h">
