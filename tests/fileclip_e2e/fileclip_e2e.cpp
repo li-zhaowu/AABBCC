@@ -191,7 +191,13 @@ static int IndexOf(const std::vector<FILEDESCRIPTORW>& d, const wchar_t* name)
 
 int wmain(int argc, wchar_t** argv)
 {
-	g_verbose = argc > 1 && wcscmp(argv[1], L"-v") == 0;
+	bool pollOnly = false;
+	for (int i = 1; i < argc; ++i) {
+		if (wcscmp(argv[i], L"-v") == 0)
+			g_verbose = true;
+		else if (wcscmp(argv[i], L"-poll") == 0)
+			pollOnly = true; // source finds clipboard changes by polling only
+	}
 	OleInitialize(NULL);
 
 	// Test tree in %TEMP%.
@@ -213,7 +219,9 @@ int wmain(int argc, wchar_t** argv)
 	CHECK(WriteFileBytes(dir + L"\\zero.dat", {}));
 
 	Link toB, toA;
-	FileClipboard a(MakeCallbacks("A", toB));
+	Callbacks cbA = MakeCallbacks("A", toB);
+	cbA.useClipboardListener = !pollOnly;
+	FileClipboard a(cbA);
 	FileClipboard b(MakeCallbacks("B", toA));
 	toB.peer = &b;
 	toA.peer = &a;
@@ -405,6 +413,6 @@ int wmain(int argc, wchar_t** argv)
 		std::fprintf(stderr, "%d check(s) failed\n", g_failures);
 		return 1;
 	}
-	std::printf("all fileclip_e2e tests passed\n");
+	std::printf("all fileclip_e2e tests passed%s\n", pollOnly ? " (polling only)" : "");
 	return 0;
 }

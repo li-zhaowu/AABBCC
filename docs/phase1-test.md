@@ -80,7 +80,21 @@ fileclip_e2e.exe
 |---|---|---|
 | 20 | 走公网（或用限速工具模拟），粘贴一个几百 MB 的文件，同时操作远程桌面 | 速度接近带宽上限；远程画面和鼠标键盘仍然能响应（会比平时慢一些） |
 
-## 4. 出问题时请提供
+## 4. 排查：按日志定位是哪一步出了问题
+
+日志里搜 `file clipboard`。以「远程复制 → 本地粘贴」为例，正常情况下依次出现：
+
+| 步骤 | 哪一端的日志 | 应该看到 | 如果看到的是 |
+|---|---|---|---|
+| 1. 发现复制 | 服务端 | `clipboard has N file(s)/folder(s)` | 什么都没有：剪贴板变化没被发现（现在有每 0.5 秒的轮询兜底） |
+| 2. 生成清单 | 服务端 | `offered N entries` | `no user token` / `impersonation failed` / `cannot access ...`：拿不到用户身份或访问不了文件 |
+| 3. 收到清单 | 查看器 | `peer offers N entries`，然后 `... are on the clipboard, ready to paste` | `OleSetClipboard failed`：本地剪贴板写入失败 |
+| 4. 粘贴读取 | 服务端 | （调试级别）`serving ...` | `cannot open ..., error N` / `read for offer ... but the current offer is ...` |
+| 5. 出错 | 查看器 | — | `peer reports error N on stream ...`：对端读文件失败，看对端日志里的原因 |
+
+本地复制 → 远程粘贴时，两端的角色正好反过来。
+
+## 5. 出问题时请提供
 
 - 两端的日志（查看器 `-loglevel 10 -logfile ...`；服务端打开调试日志），里面搜 `file clipboard`；
 - 服务端的运行方式（服务还是普通程序）和两端的 Windows 版本；

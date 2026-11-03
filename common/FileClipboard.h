@@ -63,6 +63,9 @@ struct Callbacks {
 	// while doing so; the engine closes it. Leave it NULL to use the
 	// process's own identity.
 	std::function<bool(HANDLE* token)> acquireUserToken;
+	// Register for clipboard change notifications. The sequence number is
+	// polled as well, so this is only turned off by tests of the polling.
+	bool useClipboardListener = true;
 };
 
 class RemoteDataObject;
@@ -155,6 +158,7 @@ private:
 	HWND m_hwnd = NULL;
 	HANDLE m_readyEvent = NULL;
 	bool m_comOk = false;
+	DWORD m_lastClipSeq = 0; // clipboard sequence number last looked at
 	RemoteDataObject* m_remoteObject = nullptr; // our object on the clipboard
 	uint32_t m_remoteSeq = 0;
 

@@ -14,8 +14,14 @@ x86_64-w64-mingw32-g++ -std=c++17 -O1 -g -Wall -Wextra -municode -DUNICODE -D_UN
 WINE=${WINE:-$(command -v wine64 || command -v wine || echo /usr/lib/wine/wine64)}
 # Wine needs a UTF-8 locale for non-ASCII file names. A custom TMPDIR makes
 # xvfb-run + Wine abort on some systems, so drop it for the run.
-RUN="env -u TMPDIR LC_ALL=C.UTF-8 WINEDEBUG=${WINEDEBUG:--all} $WINE $OUT $*"
-if [ -z "$DISPLAY" ] && command -v xvfb-run >/dev/null; then
-	exec xvfb-run -a $RUN
-fi
-exec $RUN
+run() {
+	RUN="env -u TMPDIR LC_ALL=C.UTF-8 WINEDEBUG=${WINEDEBUG:--all} $WINE $OUT $*"
+	if [ -z "$DISPLAY" ] && command -v xvfb-run >/dev/null; then
+		xvfb-run -a $RUN
+	else
+		$RUN
+	fi
+}
+# Once with the clipboard listener, once relying on polling only.
+run "$@"
+run -poll "$@"
