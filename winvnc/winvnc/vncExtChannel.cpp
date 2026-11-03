@@ -16,6 +16,7 @@
 #include "common/FileClipboard.h"
 #include "vncVideoStreamer.h"
 #include "vncWindowSession.h"
+#include "vncAudioStreamer.h"
 
 #include <mutex>
 #include <shellapi.h>
@@ -322,6 +323,21 @@ void vncServerExtChannel::OpenForClient()
 		mask |= ChannelBit(kChWindow);
 	}
 
+	// Remote audio: what the server plays is sent to the viewer (WASAPI
+	// loopback, AAC). Nothing is recorded until the viewer asks for it.
+	{
+		vncAudioStreamer::Callbacks ac;
+		ac.send = [this](ExtPriority prio, uint8_t subtype, const std::vector<uint8_t>& payload) {
+			return Send(prio, kChAudio, subtype, payload);
+		};
+		ac.log = [this](int level, const std::string& msg) { Log(level, msg); };
+		m_audio.reset(new vncAudioStreamer(ac));
+		SetHandler(kChAudio, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
+			m_audio->OnMessage(subtype, payload);
+		});
+		mask |= ChannelBit(kChAudio);
+	}
+
 	SetLocalChannelMask(mask);
 	Open();
 }
@@ -352,6 +368,8 @@ void vncServerExtChannel::OnNegotiated(uint32_t mask)
 
 void vncServerExtChannel::StopEngines()
 {
+	if (m_audio)
+		m_audio->Shutdown();
 	if (m_window)
 		m_window->Shutdown();
 	if (m_video)

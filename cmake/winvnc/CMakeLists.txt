@@ -30,6 +30,8 @@ set(${PROJECT_NAME}_SOURCES
     ../../common/VideoProto.cpp
     ../../common/WindowProto.cpp
     ../../common/RateController.cpp
+    ../../common/AudioProto.cpp
+    ../../common/AacCodec.cpp
     ../../common/Hyperlinks.cpp
     ../../common/UltraVncZ.cpp
     ../../common/d3des.c
@@ -89,6 +91,7 @@ set(${PROJECT_NAME}_SOURCES
     vncVideoStreamer.cpp
     vncWindowCapture.cpp
     vncWindowSession.cpp
+    vncAudioStreamer.cpp
     vncconndialog.cpp
     vncdesktop.cpp
     vncdesktopsink.cpp
@@ -131,7 +134,7 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE zstd::libzstd
     PRIVATE LibLZMA::LibLZMA
 	PRIVATE unofficial-sodium::sodium
-    PRIVATE d3d11 dxgi winmm dwmapi
+    PRIVATE d3d11 dxgi winmm dwmapi mfplat mfuuid
     libomnithread
     librdr
     libudtcloud

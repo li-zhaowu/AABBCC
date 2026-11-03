@@ -20,6 +20,7 @@
 namespace fileclip { class FileClipboard; }
 class vncVideoStreamer;
 class vncWindowSession;
+class vncAudioStreamer;
 
 class vncClient;
 class VSocket;
@@ -71,6 +72,8 @@ private:
 	std::unique_ptr<vncVideoStreamer> m_video;
 	// Single window mode (channel kChWindow).
 	std::unique_ptr<vncWindowSession> m_window;
+	// Remote audio (channel kChAudio).
+	std::unique_ptr<vncAudioStreamer> m_audio;
 };
 
 // When the server runs as a service (LocalSystem in the user's session), the

@@ -11,8 +11,11 @@
     <ClCompile Include="..\..\common\VideoProto.cpp" />
     <ClCompile Include="..\..\common\WindowProto.cpp" />
     <ClCompile Include="..\..\common\RateController.cpp" />
+    <ClCompile Include="..\..\common\AudioProto.cpp" />
+    <ClCompile Include="..\..\common\AacCodec.cpp" />
     <ClCompile Include="vncWindowCapture.cpp" />
     <ClCompile Include="vncWindowSession.cpp" />
+    <ClCompile Include="vncAudioStreamer.cpp" />
     <ClCompile Include="vncNvencEncoder.cpp" />
     <ClCompile Include="vncVideoCapture.cpp" />
     <ClCompile Include="vncVideoStreamer.cpp" />
@@ -148,8 +151,11 @@
     <ClInclude Include="..\..\common\VideoProto.h" />
     <ClInclude Include="..\..\common\WindowProto.h" />
     <ClInclude Include="..\..\common\RateController.h" />
+    <ClInclude Include="..\..\common\AudioProto.h" />
+    <ClInclude Include="..\..\common\AacCodec.h" />
     <ClInclude Include="vncWindowCapture.h" />
     <ClInclude Include="vncWindowSession.h" />
+    <ClInclude Include="vncAudioStreamer.h" />
     <ClInclude Include="vncNvencEncoder.h" />
     <ClInclude Include="vncVideoCapture.h" />
     <ClInclude Include="vncVideoStreamer.h" />
