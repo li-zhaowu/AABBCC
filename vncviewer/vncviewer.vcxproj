@@ -1764,6 +1764,10 @@
     <ClCompile Include="ClientConnectionVideo.cpp" />
     <ClCompile Include="VideoCursor.cpp" />
     <ClCompile Include="VideoDecoder.cpp" />
+    <ClCompile Include="..\common\AudioProto.cpp" />
+    <ClCompile Include="..\common\AacCodec.cpp" />
+    <ClCompile Include="ClientConnectionAudio.cpp" />
+    <ClCompile Include="AudioPlayer.cpp" />
     <ClCompile Include="ClientConnectionExt.cpp" />
     <ClCompile Include="Daemon.cpp">
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -2402,6 +2406,9 @@
     <ClInclude Include="..\common\WindowProto.h" />
     <ClInclude Include="VideoCursor.h" />
     <ClInclude Include="VideoDecoder.h" />
+    <ClInclude Include="..\common\AudioProto.h" />
+    <ClInclude Include="..\common\AacCodec.h" />
+    <ClInclude Include="AudioPlayer.h" />
     <ClInclude Include="ClientConnectionExt.h" />
     <ClInclude Include="Daemon.h" />
     <ClInclude Include="..\rfb\dh.h" />

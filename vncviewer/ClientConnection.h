@@ -63,6 +63,7 @@ extern "C"
 // System menu entries (low 4 bits zero, as WM_SYSCOMMAND needs).
 #define ID_VIDEOMODE 0xC6C0
 #define ID_WINDOWMODE 0xC6D0
+#define ID_REMOTEAUDIO 0xC6E0
 #include "common/WindowProto.h"
 #include "./directx/directxviewer.h"
 #include "FpsCounter.h"
@@ -106,6 +107,7 @@ extern const UINT FileTransferSendPacketMessage;
 class ClientConnection;
 class CDSMPlugin;
 class ViewerExtChannel;
+class AudioPlayer;
 typedef void (ClientConnection:: *tightFilterFunc)(int);
 
 void JpegErrorHeader(j_common_ptr cinfo);
@@ -565,6 +567,19 @@ private:
 	std::atomic<bool> m_videoActive{false};      // a stream is running: no framebuffer updates
 	omni_mutex m_videoMutex;
 	std::string m_videoEndReason;                // guarded by m_videoMutex
+
+	// Remote audio (ClientConnectionAudio.cpp).
+	static UINT AudioEventMessage();
+	bool SendAudioMessage(uint8_t subtype, const std::vector<uint8_t>& payload);
+	void ToggleRemoteAudio();
+	void StopRemoteAudio(bool tellServer);
+	void OnAudioEvent(WPARAM statusCode);
+	void ResetAudioState();
+	void OnAudioMessage(uint8_t subtype, std::vector<uint8_t>& payload);
+	std::unique_ptr<AudioPlayer> m_audioPlayer;  // created on the UI thread, never reset while connected
+	std::atomic<bool> m_audioRequested{false};   // user switched it on
+	omni_mutex m_audioMutex;
+	std::string m_audioEndReason;                // guarded by m_audioMutex
 	friend struct TLSPlugin;
 
 	// Modif sf@2002 - Server Scaling

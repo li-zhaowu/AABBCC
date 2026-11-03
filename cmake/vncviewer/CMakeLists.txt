@@ -28,6 +28,8 @@ set(${PROJECT_NAME}_SOURCES
     ../common/FileClipboard.cpp
     ../common/VideoProto.cpp
     ../common/WindowProto.cpp
+    ../common/AudioProto.cpp
+    ../common/AacCodec.cpp
     ../common/Hyperlinks.cpp
     ../common/UltraVncZ.cpp
     ../common/mnemonic.c
@@ -47,6 +49,8 @@ set(${PROJECT_NAME}_SOURCES
     ClientConnectionWindow.cpp
     VideoCursor.cpp
     VideoDecoder.cpp
+    ClientConnectionAudio.cpp
+    AudioPlayer.cpp
     ClientConnectionCoRRE.cpp
     ClientConnectionCopyRect.cpp
     ClientConnectionCursor.cpp

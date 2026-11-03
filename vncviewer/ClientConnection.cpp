@@ -69,6 +69,7 @@ using namespace helper;
 #include "UltraVNCHelperFunctions.h"
 #include "rfb/HighResolutionWheel.h"
 #include "ClientConnectionExt.h"
+#include "AudioPlayer.h"
 extern HINSTANCE m_hInstResDLL;
 
 // [v1.0.2-jp1 fix]
@@ -827,6 +828,7 @@ void ClientConnection::DoConnection(bool reconnect)
 	m_ext->ResetConnection(!m_opts->m_DisableClipboard && !m_opts->m_ViewOnly);
 	ResetVideoState();
 	ResetWindowState();
+	ResetAudioState();
 
     SetFormatAndEncodings();
 
@@ -1541,6 +1543,7 @@ void ClientConnection::CreateDisplay()
 		AppendMenu(hsysmenu, MF_STRING, ID_SW, L"Take Snapshot  \tCtrl+Alt+Shift+S");
 		AppendMenu(hsysmenu, MF_STRING, ID_VIDEOMODE, L"Video Mode (GPU)");
 		AppendMenu(hsysmenu, MF_STRING, ID_WINDOWMODE, L"Single Window...");
+		AppendMenu(hsysmenu, MF_STRING, ID_REMOTEAUDIO, L"Remote Audio");
 		// AppendMenu(hsysmenu, MF_STRING, ID_BUTTON,	_T("Show Toolbar Buttons"));
 		AppendMenu(hsysmenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hsysmenu, MF_STRING, ID_DINPUT,	sz_L19); // disable remote input
@@ -4773,6 +4776,7 @@ void ClientConnection::SuspendThread()
 	m_ext->Disconnect();
 	ResetVideoState();
 	ResetWindowState();
+	ResetAudioState();
 
 	// Reinit encoders stuff
 	delete(zis);
@@ -4837,6 +4841,7 @@ ClientConnection::~ClientConnection()
 	if (m_ext)
 		m_ext->Shutdown();
 	DestroyVideoCursors();
+	m_audioPlayer.reset();
 
 	omni_mutex_lock l(m_bitmapdcMutex);
 	if (m_hwndStatus)
@@ -8501,6 +8506,10 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 		_this->OnWindowModeEvent(wParam, lParam);
 		return 0;
 	}
+	if (iMsg == AudioEventMessage()) {
+		_this->OnAudioEvent(wParam);
+		return 0;
+	}
 
 			switch (iMsg)
 			{
@@ -8548,6 +8557,9 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 						return 0;
 					case ID_WINDOWMODE:
 						_this->ToggleWindowMode();
+						return 0;
+					case ID_REMOTEAUDIO:
+						_this->ToggleRemoteAudio();
 						return 0;
 					case ID_SW:
 						{

@@ -38,6 +38,9 @@ ViewerExtChannel::ViewerExtChannel(ClientConnection* cc)
 	SetHandler(kChWindow, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
 		m_cc->OnWindowMessage(subtype, payload);
 	});
+	SetHandler(kChAudio, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
+		m_cc->OnAudioMessage(subtype, payload);
+	});
 }
 
 ViewerExtChannel::~ViewerExtChannel()
@@ -49,7 +52,7 @@ void ViewerExtChannel::ResetConnection(bool allowFileClipboard)
 {
 	Disconnect();
 
-	uint32_t mask = ChannelBit(kChVideo) | ChannelBit(kChWindow);
+	uint32_t mask = ChannelBit(kChVideo) | ChannelBit(kChWindow) | ChannelBit(kChAudio);
 	if (allowFileClipboard) {
 		if (!m_fileClip) {
 			fileclip::Callbacks cb;
