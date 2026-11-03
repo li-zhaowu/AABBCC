@@ -3062,7 +3062,7 @@ vncClientThread::run(void* arg)
 					// Extension message channel: the viewer understands rfbExtMsg.
 					// Opening queues our Caps; the viewer answers with its own.
 					if (Swap32IfLE(encoding) == rfbEncodingExtCaps) {
-						m_client->m_extChannel->Open();
+						m_client->m_extChannel->OpenForClient();
 						vnclog.Print(LL_INTINFO, VNCLOG("Extension channel protocol extension enabled\n"));
 						continue;
 					}

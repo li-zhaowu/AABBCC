@@ -15,6 +15,9 @@
 #include "common/ExtChannel.h"
 
 #include <atomic>
+#include <memory>
+
+namespace fileclip { class FileClipboard; }
 
 class vncClient;
 class VSocket;
@@ -30,6 +33,10 @@ public:
 	// the connection must be dropped.
 	bool ReadAndDispatch(VSocket* socket, int nTO);
 
+	// The viewer announced rfbEncodingExtCaps: decide which channels this
+	// client may use, start their engines and send our Caps. Idempotent.
+	void OpenForClient();
+
 	// Called by vncClientThread when the connection ends, before the update
 	// thread is stopped. Unblocks a pending send and joins the sender thread.
 	// Must not be called while holding the client's update lock.
@@ -41,9 +48,20 @@ protected:
 	void BeginBatch() override;
 	void EndBatch() override;
 	void OnTransportError() override;
+	void OnNegotiated(uint32_t mask) override;
 	void Log(int level, const std::string& msg) override;
 
 private:
+	void StopEngines();
+
 	vncClient* m_client;
 	std::atomic<bool> m_shuttingDown{false};
+	bool m_openedForClient = false;
+	// File copy and paste (channel kChFileClip); null if not allowed.
+	std::unique_ptr<fileclip::FileClipboard> m_fileClip;
 };
+
+// When the server runs as a service (LocalSystem in the user's session), the
+// user's Explorer must be allowed to call into our clipboard objects. Call
+// once at startup, before COM is used for anything else.
+void vncExtChannelInitServiceComSecurity();

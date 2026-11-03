@@ -44,6 +44,7 @@
 #include <direct.h>
 #include <errno.h>
 #include "credentials.h"
+#include "vncExtChannel.h"
 
 #pragma comment (lib, "comctl32")
 
@@ -904,6 +905,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine2
 				//Run as service
 				if (!Myinit(hInstance)) return return2(0);
 				settings->setRunningFromExternalService(true);
+				vncExtChannelInitServiceComSecurity();
 				int return2value = WinVNCAppMain();
 				return return2(return2value);
 			}
@@ -914,6 +916,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine2
 				if (!Myinit(hInstance)) return return2(0);
 				settings->setRunningFromExternalService(true);
 				settings->setRunningFromExternalServiceRdp(true);
+				vncExtChannelInitServiceComSecurity();
 				int return2value = WinVNCAppMain();
 				return return2(return2value);
 			}

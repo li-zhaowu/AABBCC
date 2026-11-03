@@ -12,6 +12,7 @@
 #include "ClientConnection.h"
 #include "ClientConnectionExt.h"
 #include "Exception.h"
+#include "common/FileClipboard.h"
 
 using namespace extmsg;
 
@@ -19,16 +20,63 @@ static_assert(rfbExtMsg == extmsg::kMsgType, "rfbExtMsg mismatch");
 static_assert(rfbEncodingExtCaps == extmsg::kCapsEncoding, "rfbEncodingExtCaps mismatch");
 static_assert(sz_rfbExtMsgHeader == extmsg::kHeaderSize, "sz_rfbExtMsgHeader mismatch");
 
-// Channels this viewer implements. Bits are added as the features land.
-static const uint32_t kViewerChannels = 0;
+// Channels are chosen per connection in ResetConnection().
+static const uint32_t kNoChannels = 0;
 
 ViewerExtChannel::ViewerExtChannel(ClientConnection* cc)
-	: ExtChannel(kViewerChannels), m_cc(cc)
+	: ExtChannel(kNoChannels), m_cc(cc)
 {
+	// Keyboard and mouse events wait for the write lock while a batch goes
+	// out; keep batches small so input stays responsive on slow uplinks.
+	SetBatchBudget(64 * 1024);
 }
 
 ViewerExtChannel::~ViewerExtChannel()
 {
+	Shutdown();
+}
+
+void ViewerExtChannel::ResetConnection(bool allowFileClipboard)
+{
+	Disconnect();
+
+	uint32_t mask = 0;
+	if (allowFileClipboard) {
+		if (!m_fileClip) {
+			fileclip::Callbacks cb;
+			cb.send = [this](ExtPriority prio, uint8_t subtype, const std::vector<uint8_t>& payload) {
+				return Send(prio, kChFileClip, subtype, payload);
+			};
+			cb.log = [this](int level, const std::string& msg) { Log(level, msg); };
+			m_fileClip.reset(new fileclip::FileClipboard(cb));
+			if (m_fileClip->Start()) {
+				SetHandler(kChFileClip, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
+					m_fileClip->OnMessage(subtype, payload);
+				});
+			} else {
+				m_fileClip.reset();
+			}
+		}
+		if (m_fileClip)
+			mask |= ChannelBit(kChFileClip);
+	}
+	SetLocalChannelMask(mask);
+}
+
+void ViewerExtChannel::Disconnect()
+{
+	if (m_fileClip)
+		m_fileClip->OnDisconnected();
+	Reset();
+}
+
+void ViewerExtChannel::Shutdown()
+{
+	// The engine sends through this channel; stop it first.
+	if (m_fileClip) {
+		m_fileClip->OnDisconnected();
+		m_fileClip->Stop();
+	}
 	Stop();
 }
 
@@ -88,6 +136,8 @@ bool ViewerExtChannel::WriteFrame(const uint8_t header[kHeaderSize],
 void ViewerExtChannel::OnNegotiated(uint32_t mask)
 {
 	vnclog.Print(1, _T("Extension channel negotiated with server, channels 0x%x\n"), mask);
+	if (m_fileClip && (mask & ChannelBit(kChFileClip)))
+		m_fileClip->OnConnected();
 }
 
 void ViewerExtChannel::Log(int level, const std::string& msg)

@@ -323,6 +323,17 @@ static void TestPriority()
 	CHECK(p.viewer->rxErrors == 0);
 }
 
+static void TestLocalMaskChange()
+{
+	Pair p(ChannelBit(kChFileClip), ChannelBit(kChFileClip));
+	// The viewer disables the file clipboard before (re)connecting.
+	p.viewer->SetLocalChannelMask(0);
+	CHECK(p.viewer->LocalChannelMask() == ChannelBit(kChControl));
+	CHECK(p.Negotiate());
+	CHECK(!p.server->ChannelUsable(kChFileClip));
+	CHECK(!p.viewer->ChannelUsable(kChFileClip));
+}
+
 static void TestPriorityConsistency()
 {
 	const uint32_t mask = ChannelBit(kChFileClip);
@@ -444,6 +455,7 @@ int main()
 	TestFragmentationRoundTrip();
 	TestPriority();
 	TestPriorityConsistency();
+	TestLocalMaskChange();
 	TestReceiverValidation();
 	TestPing();
 	TestTransportFailure();

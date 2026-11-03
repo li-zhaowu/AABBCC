@@ -23,6 +23,8 @@ set(${PROJECT_NAME}_SOURCES
     ../../common/ZipUnzip/MiniZipNG.cpp
     ../../common/Clipboard.cpp
     ../../common/ExtChannel.cpp
+    ../../common/FileClipProto.cpp
+    ../../common/FileClipboard.cpp
     ../../common/Hyperlinks.cpp
     ../../common/UltraVncZ.cpp
     ../../common/d3des.c
