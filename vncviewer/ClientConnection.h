@@ -60,8 +60,10 @@ extern "C"
 #include "VideoDecoder.h"
 #include "common/VideoProto.h"
 
-// System menu entry for video mode (low 4 bits zero, as WM_SYSCOMMAND needs).
+// System menu entries (low 4 bits zero, as WM_SYSCOMMAND needs).
 #define ID_VIDEOMODE 0xC6C0
+#define ID_WINDOWMODE 0xC6D0
+#include "common/WindowProto.h"
 #include "./directx/directxviewer.h"
 #include "FpsCounter.h"
 #include "WheelInput.h"
@@ -535,6 +537,25 @@ private:
 	HCURSOR m_videoCursor = NULL;                // NULL with m_videoCursorValid = hidden pointer
 	HCURSOR m_videoCursorOld = NULL;             // previous one, destroyed on the next change
 	std::atomic<bool> m_videoCursorValid{false};
+
+	// Single window mode (ClientConnectionWindow.cpp).
+	static UINT WindowModeMessage();
+	bool SendWindowMessage(uint8_t subtype, const std::vector<uint8_t>& payload);
+	void ToggleWindowMode();
+	void LeaveWindowMode(bool tellServer);
+	void OnWindowModeEvent(WPARAM event, LPARAM param);
+	void ResetWindowState();
+	void ResizeLocalFramebuffer(int width, int height);
+	void OnWindowMessage(uint8_t subtype, std::vector<uint8_t>& payload);
+	std::atomic<bool> m_windowPicking{false};    // waiting for the window list
+	std::atomic<bool> m_windowRequested{false};  // a window was picked
+	std::atomic<bool> m_windowActive{false};     // the framebuffer is the window canvas
+	std::atomic<uint32_t> m_windowSession{0};
+	int m_windowSavedWidth = 0;                  // desktop framebuffer size to go back to
+	int m_windowSavedHeight = 0;
+	omni_mutex m_windowMutex;
+	std::vector<window::Entry> m_windowList;     // guarded by m_windowMutex
+	std::string m_windowEndReason;               // guarded by m_windowMutex
 	std::unique_ptr<VideoDecoder> m_videoDecoder; // reader thread only
 	video::Config m_videoConfig;                 // reader thread only
 	bool m_videoNeedKey = true;                  // reader thread only

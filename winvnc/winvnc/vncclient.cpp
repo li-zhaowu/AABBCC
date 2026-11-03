@@ -3572,6 +3572,11 @@ vncClientThread::run(void* arg)
 				break;
 			}
 
+			// Single window mode: the viewer's framebuffer is the window
+			// canvas; desktop updates must not be sent until it is back.
+			if (m_client->m_extChannel->WindowSessionActive())
+				break;
+
 			if (!m_client->NotifyUpdate(msg.fur))
 				m_client->cl_connected = FALSE;
 			break;
@@ -3610,6 +3615,9 @@ vncClientThread::run(void* arg)
 					{
 						msg.ke.key = Swap32IfLE(msg.ke.key);
 
+						// Single window mode: keys must reach that window.
+						m_client->m_extChannel->BeforeWindowKey();
+
 						// Get the keymapper to do the work
 						// m_client->m_keymap.DoXkeysym(msg.ke.key, msg.ke.down);
 						vncKeymap::keyEvent(msg.ke.key, (0 != msg.ke.down), m_client->m_jap, m_client->m_unicode);
@@ -3631,6 +3639,24 @@ vncClientThread::run(void* arg)
 			// Use the same DSM-aware type offset as the legacy pointer path.
 			if (m_socket->ReadExact(((char*)&msg) + nTO, size - nTO))
 			{
+				// Single window mode: coordinates are relative to the window
+				// canvas, and input may only reach that window.
+				if (m_client->m_extChannel->WindowSessionActive()) {
+					if (!PreConnect && m_client->m_pointerenabled) {
+						if (preciseWheel) {
+							unsigned axis = 0, x = 0, y = 0;
+							int delta = 0;
+							DecodeHighResolutionWheel(msg.wheel, 0x10000, 0x10000, axis, delta, x, y);
+							m_client->m_extChannel->HandleWindowPointer(x, y, 0 /* kept by the session */,
+								axis == rfbWheelVertical ? 0 : 1, delta);
+						} else {
+							m_client->m_extChannel->HandleWindowPointer(Swap16IfLE(msg.pe.x), Swap16IfLE(msg.pe.y),
+								msg.pe.buttonMask, 0, 0);
+						}
+						m_client->m_remoteevent = TRUE;
+					}
+					break;
+				}
 				if (preciseWheel) {
 					unsigned x, y;
 					rfb::Rect bounds = m_client->m_encodemgr.m_buffer->GetViewerSize();

@@ -27,6 +27,7 @@ set(${PROJECT_NAME}_SOURCES
     ../common/FileClipProto.cpp
     ../common/FileClipboard.cpp
     ../common/VideoProto.cpp
+    ../common/WindowProto.cpp
     ../common/Hyperlinks.cpp
     ../common/UltraVncZ.cpp
     ../common/mnemonic.c
@@ -43,6 +44,7 @@ set(${PROJECT_NAME}_SOURCES
     ClientConnectionClipboard.cpp
     ClientConnectionExt.cpp
     ClientConnectionVideo.cpp
+    ClientConnectionWindow.cpp
     VideoCursor.cpp
     VideoDecoder.cpp
     ClientConnectionCoRRE.cpp

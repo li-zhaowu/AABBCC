@@ -9,6 +9,9 @@
     <ClCompile Include="..\..\common\FileClipProto.cpp" />
     <ClCompile Include="..\..\common\FileClipboard.cpp" />
     <ClCompile Include="..\..\common\VideoProto.cpp" />
+    <ClCompile Include="..\..\common\WindowProto.cpp" />
+    <ClCompile Include="vncWindowCapture.cpp" />
+    <ClCompile Include="vncWindowSession.cpp" />
     <ClCompile Include="vncNvencEncoder.cpp" />
     <ClCompile Include="vncVideoCapture.cpp" />
     <ClCompile Include="vncVideoStreamer.cpp" />
@@ -142,6 +145,9 @@
     <ClInclude Include="..\..\common\FileClipProto.h" />
     <ClInclude Include="..\..\common\FileClipboard.h" />
     <ClInclude Include="..\..\common\VideoProto.h" />
+    <ClInclude Include="..\..\common\WindowProto.h" />
+    <ClInclude Include="vncWindowCapture.h" />
+    <ClInclude Include="vncWindowSession.h" />
     <ClInclude Include="vncNvencEncoder.h" />
     <ClInclude Include="vncVideoCapture.h" />
     <ClInclude Include="vncVideoStreamer.h" />

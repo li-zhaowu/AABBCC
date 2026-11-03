@@ -15,6 +15,7 @@
 #include "credentials.h"
 #include "common/FileClipboard.h"
 #include "vncVideoStreamer.h"
+#include "vncWindowSession.h"
 
 #include <mutex>
 
@@ -133,8 +134,46 @@ void vncServerExtChannel::OpenForClient()
 		Log(1, "video mode unavailable: " + why);
 	}
 
+	// Single window mode works with any GPU (lossless tiles).
+	{
+		vncWindowSession::Callbacks wc;
+		wc.send = [this](ExtPriority prio, uint8_t subtype, const std::vector<uint8_t>& payload) {
+			return Send(prio, kChWindow, subtype, payload);
+		};
+		wc.log = [this](int level, const std::string& msg) { Log(level, msg); };
+		wc.onSessionStart = [this] {
+			// An update being sent right now finishes first (it holds the
+			// update lock); the viewer requests a full update when it leaves
+			// window mode.
+			omni_mutex_lock l(m_client->GetUpdateLock(), 261);
+			m_client->m_incr_rgn.clear();
+		};
+		m_window.reset(new vncWindowSession(wc));
+		SetHandler(kChWindow, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
+			m_window->OnMessage(subtype, payload);
+		});
+		mask |= ChannelBit(kChWindow);
+	}
+
 	SetLocalChannelMask(mask);
 	Open();
+}
+
+bool vncServerExtChannel::WindowSessionActive() const
+{
+	return m_window && m_window->Active();
+}
+
+void vncServerExtChannel::HandleWindowPointer(int x, int y, uint8_t buttonMask, int wheelAxis, int wheelDelta)
+{
+	if (m_window)
+		m_window->HandlePointer(x, y, buttonMask, wheelAxis, wheelDelta);
+}
+
+void vncServerExtChannel::BeforeWindowKey()
+{
+	if (m_window && m_window->Active())
+		m_window->BeforeKey();
 }
 
 void vncServerExtChannel::OnNegotiated(uint32_t mask)
@@ -146,6 +185,8 @@ void vncServerExtChannel::OnNegotiated(uint32_t mask)
 
 void vncServerExtChannel::StopEngines()
 {
+	if (m_window)
+		m_window->Shutdown();
 	if (m_video)
 		m_video->Shutdown();
 	if (m_fileClip) {

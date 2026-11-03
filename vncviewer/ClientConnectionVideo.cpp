@@ -99,6 +99,8 @@ void ClientConnection::ToggleVideoMode()
 		problem = L"The server does not offer video mode.\n\n"
 		          L"Video mode needs the new UltraVNC server on a machine with an NVIDIA GPU "
 		          L"and a current NVIDIA driver (see the server log for details).";
+	else if (m_windowRequested)
+		problem = L"Leave single window mode first.";
 	else if (!FramebufferIsBgra32(m_myFormat))
 		problem = L"Video mode needs the \"Full colors\" (32 bit) pixel format.\n\n"
 		          L"Change it in the connection options and try again.";
