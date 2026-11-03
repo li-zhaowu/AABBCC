@@ -84,6 +84,24 @@
     <ClCompile Include="..\common\FileClipboard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\common\VideoProto.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\WindowProto.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClientConnectionWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClientConnectionVideo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VideoCursor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VideoDecoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="ClientConnectionExt.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -225,6 +243,18 @@
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="..\common\FileClipboard.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\VideoProto.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\WindowProto.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="VideoCursor.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="VideoDecoder.h">
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="ClientConnection.h">

@@ -825,6 +825,8 @@ void ClientConnection::DoConnection(bool reconnect)
 	// server answers rfbEncodingExtCaps with its Caps. Files are copied and
 	// pasted only if the clipboard is enabled and we may send input.
 	m_ext->ResetConnection(!m_opts->m_DisableClipboard && !m_opts->m_ViewOnly);
+	ResetVideoState();
+	ResetWindowState();
 
     SetFormatAndEncodings();
 
@@ -1537,6 +1539,8 @@ void ClientConnection::CreateDisplay()
 		AppendMenu(hsysmenu, MF_STRING, ID_DBUTTON,	sz_L18);
 		AppendMenu(hsysmenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hsysmenu, MF_STRING, ID_SW, L"Take Snapshot  \tCtrl+Alt+Shift+S");
+		AppendMenu(hsysmenu, MF_STRING, ID_VIDEOMODE, L"Video Mode (GPU)");
+		AppendMenu(hsysmenu, MF_STRING, ID_WINDOWMODE, L"Single Window...");
 		// AppendMenu(hsysmenu, MF_STRING, ID_BUTTON,	_T("Show Toolbar Buttons"));
 		AppendMenu(hsysmenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hsysmenu, MF_STRING, ID_DINPUT,	sz_L19); // disable remote input
@@ -4767,6 +4771,8 @@ void ClientConnection::SuspendThread()
 	m_bKillThread = true;
 	m_running = false;
 	m_ext->Disconnect();
+	ResetVideoState();
+	ResetWindowState();
 
 	// Reinit encoders stuff
 	delete(zis);
@@ -4830,6 +4836,7 @@ ClientConnection::~ClientConnection()
 	// The sender thread uses the socket and crit; stop it first.
 	if (m_ext)
 		m_ext->Shutdown();
+	DestroyVideoCursors();
 
 	omni_mutex_lock l(m_bitmapdcMutex);
 	if (m_hwndStatus)
@@ -5893,9 +5900,16 @@ void* ClientConnection::run_undetached(void* arg) {
 				{
 					{
 						omni_mutex_lock l(m_bitmapdcMutex);
-						ClearCache();
 						rfbResizeFrameBufferMsg rsmsg;
 						ReadExact(((char*)&rsmsg) + m_nTO, sz_rfbResizeFrameBufferMsg - m_nTO);
+						if (m_windowActive) {
+							// Showing one window: remember the new desktop size
+							// for when we go back to the desktop.
+							m_windowSavedWidth = Swap16IfLE(rsmsg.framebufferWidth);
+							m_windowSavedHeight = Swap16IfLE(rsmsg.framebufferHeigth);
+							break;
+						}
+						ClearCache();
 
 						m_si.framebufferWidth = Swap16IfLE(rsmsg.framebufferWidth);
 						m_si.framebufferHeight = Swap16IfLE(rsmsg.framebufferHeigth);
@@ -6044,6 +6058,11 @@ void* ClientConnection::run_undetached(void* arg) {
 
 void ClientConnection::Internal_SendFramebufferUpdateRequest(int x, int y, int w, int h, bool incremental)
 {
+	// Video mode: the server streams the screen; asking for updates would
+	// only send the same pixels twice. Full requests (end of video mode,
+	// format changes) still go out.
+	if (incremental && (m_videoActive || m_windowActive))
+		return;
 	if (m_pFileTransfer && (m_pFileTransfer->m_fFileTransferRunning && ( m_pFileTransfer->m_fVisible || m_pFileTransfer->UsingOldProtocol()))) return;
 	if (m_pTextChat->m_fTextChatRunning && m_pTextChat->m_fVisible) return;
     rfbFramebufferUpdateRequestMsg fur;
@@ -8474,6 +8493,15 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 
 	if (_this == NULL) return DefWindowProc(hwnd, iMsg, wParam, lParam);
 
+	if (iMsg == VideoModeEndedMessage()) {
+		_this->OnVideoModeEnded(wParam);
+		return 0;
+	}
+	if (iMsg == WindowModeMessage()) {
+		_this->OnWindowModeEvent(wParam, lParam);
+		return 0;
+	}
+
 			switch (iMsg)
 			{
 			case WM_COPYDATA:
@@ -8515,6 +8543,12 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 				{
 					switch (LOWORD(wParam))
 					{
+					case ID_VIDEOMODE:
+						_this->ToggleVideoMode();
+						return 0;
+					case ID_WINDOWMODE:
+						_this->ToggleWindowMode();
+						return 0;
 					case ID_SW:
 						{
 						Snapshot snapshot;
@@ -9787,6 +9821,13 @@ LRESULT CALLBACK ClientConnection::WndProchwnd(HWND hwnd, UINT iMsg, WPARAM wPar
 
 	if (_this == NULL && iMsg != WM_CREATE)
 		return DefWindowProc(hwnd, iMsg, wParam, lParam);
+	if (_this && iMsg == VideoCursorChangedMessage()) {
+		// Apply a new pointer shape at once if the mouse is over us.
+		POINT pt;
+		if (GetCursorPos(&pt) && WindowFromPoint(pt) == hwnd)
+			SendMessage(hwnd, WM_SETCURSOR, (WPARAM)hwnd, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
+		return 0;
+	}
 	switch (iMsg)
 			{
 			case WM_CREATE:
@@ -10114,6 +10155,12 @@ LRESULT CALLBACK ClientConnection::WndProchwnd(HWND hwnd, UINT iMsg, WPARAM wPar
 			{
 				// if we have the focus, let the cursor change as normal
 				if ((lParam & 0xffff) == HTCLIENT) {
+					// Video mode: show the remote pointer shape (or none).
+					if (_this->m_videoActive && _this->m_videoCursorValid) {
+						omni_mutex_lock l(_this->m_videoMutex);
+						SetCursor(_this->m_videoCursor);
+						return 0;
+					}
 					HCURSOR h;
 					// Load cursors from main executable, not language DLL
 					extern HINSTANCE hInstance;

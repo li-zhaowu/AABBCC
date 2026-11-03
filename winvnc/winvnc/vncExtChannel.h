@@ -18,6 +18,8 @@
 #include <memory>
 
 namespace fileclip { class FileClipboard; }
+class vncVideoStreamer;
+class vncWindowSession;
 
 class vncClient;
 class VSocket;
@@ -36,6 +38,12 @@ public:
 	// The viewer announced rfbEncodingExtCaps: decide which channels this
 	// client may use, start their engines and send our Caps. Idempotent.
 	void OpenForClient();
+
+	// Single window mode (client thread). While it is active, pointer
+	// events are canvas coordinates and go to HandleWindowPointer.
+	bool WindowSessionActive() const;
+	void HandleWindowPointer(int x, int y, uint8_t buttonMask, int wheelAxis, int wheelDelta);
+	void BeforeWindowKey();
 
 	// Called by vncClientThread when the connection ends, before the update
 	// thread is stopped. Unblocks a pending send and joins the sender thread.
@@ -59,6 +67,10 @@ private:
 	bool m_openedForClient = false;
 	// File copy and paste (channel kChFileClip); null if not allowed.
 	std::unique_ptr<fileclip::FileClipboard> m_fileClip;
+	// Video mode (channel kChVideo); null without an NVIDIA encoder.
+	std::unique_ptr<vncVideoStreamer> m_video;
+	// Single window mode (channel kChWindow).
+	std::unique_ptr<vncWindowSession> m_window;
 };
 
 // When the server runs as a service (LocalSystem in the user's session), the
