@@ -164,6 +164,22 @@ HGLOBAL GlobalDword(DWORD v)
 	return h;
 }
 
+void AppendDropPaths(HDROP drop, std::vector<std::wstring>& paths)
+{
+	const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, NULL, 0);
+	for (UINT i = 0; i < count; ++i) {
+		const UINT len = DragQueryFileW(drop, i, NULL, 0);
+		if (len == 0)
+			continue;
+		std::wstring path(len + 1, L'\0');
+		const UINT copied = DragQueryFileW(drop, i, &path[0], len + 1);
+		if (copied) {
+			path.resize(copied);
+			paths.push_back(path);
+		}
+	}
+}
+
 } // namespace
 
 // ===========================================================================
@@ -1001,13 +1017,120 @@ void FileClipboard::OnLocalClipboardChanged(bool force)
 		Log(2, "file clipboard: clipboard holds UltraVNC virtual files, not offered");
 		return;
 	}
-	if (!IsClipboardFormatAvailable(CF_HDROP)) {
-		Log(2, "file clipboard: clipboard changed, no files on it");
-		RevokeLocalOffer();
-		return;
-	}
+	const bool hasDrop = IsClipboardFormatAvailable(CF_HDROP) != FALSE;
+	bool hasOleObject = false;
 	std::vector<std::wstring> paths;
-	if (!ReadClipboardFiles(paths) || paths.empty()) {
+	if (!hasDrop) {
+		std::string details = " seq=" + std::to_string(clipSeq);
+		DWORD session = 0;
+		if (ProcessIdToSessionId(GetCurrentProcessId(), &session))
+			details += " processSession=" + std::to_string(session);
+		if (OpenClipboard(m_hwnd)) {
+			DWORD ownerPid = 0;
+			if (HWND owner = GetClipboardOwner())
+				GetWindowThreadProcessId(owner, &ownerPid);
+			details += " ownerPid=" + std::to_string(ownerPid);
+			if (ownerPid && ProcessIdToSessionId(ownerPid, &session))
+				details += " ownerSession=" + std::to_string(session);
+			details += " formats=[";
+			for (UINT format = EnumClipboardFormats(0); format; format = EnumClipboardFormats(format)) {
+				wchar_t name[128];
+				details += std::to_string(format);
+				if (GetClipboardFormatNameW(format, name, ARRAYSIZE(name))) {
+					details += ":" + WideToUtf8(name);
+					if (lstrcmpiW(name, L"DataObject") == 0)
+						hasOleObject = true;
+				}
+				details += " ";
+			}
+			details += "] snapshotSeq=" + std::to_string(GetClipboardSequenceNumber());
+			CloseClipboard();
+		} else {
+			details += " snapshotOpenError=" + std::to_string(GetLastError());
+		}
+		Log(2, "file clipboard: clipboard changed, no files on it;" + details);
+	}
+	if (hasDrop)
+		ReadClipboardFiles(paths);
+	if (paths.empty() && (hasOleObject ||
+		IsClipboardFormatAvailable(RegisterClipboardFormatW(L"DataObject")))) {
+		if (m_cb.readDesktopClipboard)
+			m_cb.readDesktopClipboard(clipSeq, paths);
+	}
+	if (paths.empty() && !m_cb.readDesktopClipboard && (hasOleObject ||
+		IsClipboardFormatAvailable(RegisterClipboardFormatW(L"DataObject")))) {
+		Log(1, "file clipboard: reading enumerated OLE DataObject");
+		HANDLE token = NULL;
+		const bool tokenReady = !m_cb.acquireUserToken || m_cb.acquireUserToken(&token);
+		std::unique_ptr<void, decltype(&CloseHandle)> userToken(token, &CloseHandle);
+		Impersonation identity(token);
+		const bool canRead = tokenReady && !identity.Failed(token);
+		if (!canRead)
+			Log(0, "file clipboard: cannot impersonate desktop user for OLE read");
+		IDataObject* data = NULL;
+		HRESULT hr = canRead ? OleGetClipboard(&data) : E_ACCESSDENIED;
+		if (canRead) {
+			char result[16];
+			snprintf(result, sizeof(result), "0x%08lx", static_cast<unsigned long>(hr));
+			Log(1, std::string("file clipboard: OleGetClipboard ") +
+				(token ? "as desktop user" : "as process user") + ", hr " + result);
+		}
+		if (SUCCEEDED(hr)) {
+			IEnumFORMATETC* formats = NULL;
+			if (SUCCEEDED(data->EnumFormatEtc(DATADIR_GET, &formats))) {
+				std::string available;
+				FORMATETC entry = {};
+				while (formats->Next(1, &entry, NULL) == S_OK) {
+					wchar_t name[128];
+					available += " " + std::to_string(entry.cfFormat);
+					if (GetClipboardFormatNameW(entry.cfFormat, name, ARRAYSIZE(name)))
+						available += ":" + WideToUtf8(name);
+					CoTaskMemFree(entry.ptd);
+				}
+				formats->Release();
+				Log(1, "file clipboard: OLE advertised formats:[" + available + "]");
+			}
+			IShellItemArray* items = NULL;
+			hr = SHCreateShellItemArrayFromDataObject(data, IID_PPV_ARGS(&items));
+			if (SUCCEEDED(hr)) {
+				DWORD count = 0;
+				if (SUCCEEDED(items->GetCount(&count))) {
+					for (DWORD i = 0; i < count; ++i) {
+						IShellItem* item = NULL;
+						if (FAILED(items->GetItemAt(i, &item)))
+							continue;
+						PWSTR path = NULL;
+						if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+							paths.emplace_back(path);
+							CoTaskMemFree(path);
+						}
+						item->Release();
+					}
+				}
+				items->Release();
+			}
+			if (paths.empty()) {
+				FORMATETC format = {CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+				STGMEDIUM medium = {};
+				hr = data->GetData(&format, &medium);
+				if (SUCCEEDED(hr)) {
+					if (medium.tymed == TYMED_HGLOBAL && medium.hGlobal)
+						AppendDropPaths(static_cast<HDROP>(medium.hGlobal), paths);
+					ReleaseStgMedium(&medium);
+				}
+			}
+			data->Release();
+		}
+		char result[16];
+		snprintf(result, sizeof(result), "0x%08lx", static_cast<unsigned long>(hr));
+		Log(1, "file clipboard: OLE file list has " + std::to_string(paths.size()) +
+			" path(s), hr " + result);
+	}
+	if (paths.empty()) {
+		if (!hasDrop) {
+			RevokeLocalOffer();
+			return;
+		}
 		Log(0, "file clipboard: clipboard has files but the list could not be read");
 		return;
 	}
@@ -1059,18 +1182,8 @@ bool FileClipboard::ReadClipboardFiles(std::vector<std::wstring>& paths)
 		return false;
 	}
 	HDROP drop = static_cast<HDROP>(GetClipboardData(CF_HDROP));
-	if (drop) {
-		const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, NULL, 0);
-		for (UINT i = 0; i < count; ++i) {
-			const UINT len = DragQueryFileW(drop, i, NULL, 0);
-			if (len == 0)
-				continue;
-			std::wstring s(len + 1, L'\0');
-			DragQueryFileW(drop, i, &s[0], len + 1);
-			s.resize(len);
-			paths.push_back(s);
-		}
-	}
+	if (drop)
+		AppendDropPaths(drop, paths);
 	CloseClipboard();
 	return drop != NULL;
 }

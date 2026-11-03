@@ -448,6 +448,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine2
 {
 	SetDllDirectory(TEXT(""));
 	SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+	const char clipboardHelper[] = "-fileclip-read ";
+	if (strncmp(szCmdLine2, clipboardHelper, sizeof(clipboardHelper) - 1) == 0) {
+		extern int RunFileClipboardHelper(const char*);
+		return RunFileClipboardHelper(szCmdLine2 + sizeof(clipboardHelper) - 1);
+	}
 	settings = SettingsManager::getInstance();
 
 	typedef BOOL (WINAPI *pSetProcessMitigationPolicy_t)(PROCESS_MITIGATION_POLICY, PVOID, SIZE_T);

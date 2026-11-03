@@ -63,6 +63,7 @@ struct Callbacks {
 	// while doing so; the engine closes it. Leave it NULL to use the
 	// process's own identity.
 	std::function<bool(HANDLE* token)> acquireUserToken;
+	std::function<void(DWORD sequence, std::vector<std::wstring>& paths)> readDesktopClipboard;
 	// Register for clipboard change notifications. The sequence number is
 	// polled as well, so this is only turned off by tests of the polling.
 	bool useClipboardListener = true;

@@ -16,6 +16,7 @@
 #include "common/FileClipboard.h"
 
 #include <mutex>
+#include <shellapi.h>
 
 using namespace extmsg;
 
@@ -64,6 +65,155 @@ static bool AcquireDesktopUserToken(HANDLE* token)
 		DUPLICATE_SAME_ACCESS) != FALSE;
 }
 
+namespace {
+constexpr DWORD kClipboardReplyLimit = 256 * 1024;
+}
+
+int RunFileClipboardHelper(const char* args)
+{
+	unsigned long long handleValue = 0;
+	unsigned long sequence = 0;
+	char extra = 0;
+	if (sscanf_s(args, "%llu %lu %c", &handleValue, &sequence, &extra, 1u) != 2)
+		return 1;
+	HANDLE output = reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(handleValue));
+	if (GetFileType(output) != FILE_TYPE_PIPE || FAILED(OleInitialize(NULL)))
+		return 1;
+
+	std::wstring reply;
+	IDataObject* data = NULL;
+	if (GetClipboardSequenceNumber() == sequence && SUCCEEDED(OleGetClipboard(&data))) {
+		FORMATETC format = {CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+		STGMEDIUM medium = {};
+		if (SUCCEEDED(data->GetData(&format, &medium))) {
+			if (medium.tymed == TYMED_HGLOBAL && medium.hGlobal) {
+				HDROP drop = static_cast<HDROP>(medium.hGlobal);
+				const UINT count = DragQueryFileW(drop, 0xffffffff, NULL, 0);
+				for (UINT i = 0; i < count; ++i) {
+					const UINT len = DragQueryFileW(drop, i, NULL, 0);
+					if (!len || len >= kClipboardReplyLimit / sizeof(wchar_t) - reply.size()) {
+						reply.clear();
+						break;
+					}
+					std::wstring path(len + 1, L'\0');
+					if (DragQueryFileW(drop, i, &path[0], len + 1) != len) {
+						reply.clear();
+						break;
+					}
+					reply.append(path);
+				}
+			}
+			ReleaseStgMedium(&medium);
+		}
+		data->Release();
+	}
+	OleUninitialize();
+	DWORD written = 0;
+	const DWORD bytes = static_cast<DWORD>(reply.size() * sizeof(wchar_t));
+	return bytes && GetClipboardSequenceNumber() == sequence &&
+		WriteFile(output, reply.data(), bytes, &written, NULL) && written == bytes ? 0 : 1;
+}
+
+static void ReadClipboardAsDesktopUser(DWORD sequence, std::vector<std::wstring>& paths)
+{
+	using Handle = std::unique_ptr<void, decltype(&CloseHandle)>;
+	HANDLE rawToken = NULL;
+	if (!AcquireDesktopUserToken(&rawToken) || !rawToken)
+		return;
+	Handle token(rawToken, &CloseHandle);
+	HANDLE rawPrimary = NULL;
+	if (!DuplicateTokenEx(token.get(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY,
+		NULL, SecurityImpersonation, TokenPrimary, &rawPrimary))
+		return;
+	Handle primary(rawPrimary, &CloseHandle);
+	DWORD session = 0, tokenSession = 0, returned = 0;
+	if (!ProcessIdToSessionId(GetCurrentProcessId(), &session) ||
+		!GetTokenInformation(primary.get(), TokenSessionId, &tokenSession, sizeof(tokenSession), &returned) ||
+		session != tokenSession)
+		return;
+
+	wchar_t exe[32768];
+	const DWORD length = GetModuleFileNameW(NULL, exe, ARRAYSIZE(exe));
+	if (!length || length >= ARRAYSIZE(exe))
+		return;
+	SECURITY_ATTRIBUTES security = {sizeof(security), NULL, TRUE};
+	HANDLE input = NULL, output = NULL;
+	if (!CreatePipe(&input, &output, &security, 0))
+		return;
+	Handle reader(input, &CloseHandle), writer(output, &CloseHandle);
+	if (!SetHandleInformation(input, HANDLE_FLAG_INHERIT, 0))
+		return;
+	SIZE_T attributeSize = 0;
+	InitializeProcThreadAttributeList(NULL, 1, 0, &attributeSize);
+	if (!attributeSize)
+		return;
+	std::vector<unsigned char> attributeBuffer(attributeSize);
+	STARTUPINFOEXW startup = {};
+	startup.StartupInfo.cb = sizeof(startup);
+	wchar_t desktop[] = L"winsta0\\default";
+	startup.StartupInfo.lpDesktop = desktop;
+	startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeBuffer.data());
+	if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attributeSize))
+		return;
+	PROCESS_INFORMATION child = {};
+	std::wstring command = L"\"" + std::wstring(exe) + L"\" -fileclip-read " +
+		std::to_wstring(reinterpret_cast<ULONG_PTR>(output)) + L" " + std::to_wstring(sequence);
+	const BOOL started = UpdateProcThreadAttribute(startup.lpAttributeList, 0,
+		PROC_THREAD_ATTRIBUTE_HANDLE_LIST, &output, sizeof(output), NULL, NULL) &&
+		CreateProcessAsUserW(primary.get(), exe, &command[0], NULL, NULL, TRUE,
+			EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW, NULL, NULL, &startup.StartupInfo, &child);
+	const DWORD launchError = started ? 0 : GetLastError();
+	DeleteProcThreadAttributeList(startup.lpAttributeList);
+	if (!started) {
+		vnclog.Print(LL_INTERR, VNCLOG("file clipboard: desktop reader launch failed, error %lu\n"), launchError);
+		return;
+	}
+	writer.reset();
+	Handle process(child.hProcess, &CloseHandle), thread(child.hThread, &CloseHandle);
+	std::vector<char> reply;
+	const ULONGLONG deadline = GetTickCount64() + 3000;
+	while (GetTickCount64() < deadline) {
+		DWORD available = 0;
+		if (!PeekNamedPipe(input, NULL, 0, NULL, &available, NULL))
+			break;
+		if (!available) {
+			Sleep(10);
+			continue;
+		}
+		if (available > kClipboardReplyLimit - reply.size())
+			break;
+		const size_t offset = reply.size();
+		reply.resize(offset + available);
+		DWORD received = 0;
+		if (!ReadFile(input, reply.data() + offset, available, &received, NULL))
+			break;
+		reply.resize(offset + received);
+	}
+	if (WaitForSingleObject(process.get(), 50) != WAIT_OBJECT_0) {
+		TerminateProcess(process.get(), 1);
+		vnclog.Print(LL_INTERR, VNCLOG("file clipboard: desktop reader timed out\n"));
+		return;
+	}
+	DWORD code = 1;
+	if (!GetExitCodeProcess(process.get(), &code) || code != 0 ||
+		reply.empty() || reply.size() % sizeof(wchar_t) || GetClipboardSequenceNumber() != sequence) {
+		vnclog.Print(LL_INTWARN, VNCLOG("file clipboard: desktop reader returned no current paths, exit %lu\n"), code);
+		return;
+	}
+	std::wstring result(reply.size() / sizeof(wchar_t), L'\0');
+	memcpy(&result[0], reply.data(), reply.size());
+	if (result.back() != L'\0')
+		return;
+	for (size_t start = 0; start < result.size();) {
+		const size_t end = result.find(L'\0', start);
+		if (end > start)
+			paths.emplace_back(result.substr(start, end - start));
+		start = end + 1;
+	}
+	vnclog.Print(LL_INTWARN, VNCLOG("file clipboard: desktop reader returned %u path(s)\n"),
+		static_cast<unsigned>(paths.size()));
+}
+
 void vncServerExtChannel::OpenForClient()
 {
 	if (m_openedForClient) {
@@ -83,6 +233,8 @@ void vncServerExtChannel::OpenForClient()
 		};
 		cb.log = [this](int level, const std::string& msg) { Log(level, msg); };
 		cb.acquireUserToken = &AcquireDesktopUserToken;
+		if (settings->RunningFromExternalService())
+			cb.readDesktopClipboard = &ReadClipboardAsDesktopUser;
 		m_fileClip.reset(new fileclip::FileClipboard(cb));
 		if (m_fileClip->Start()) {
 			SetHandler(kChFileClip, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
