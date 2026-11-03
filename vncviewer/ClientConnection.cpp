@@ -822,8 +822,9 @@ void ClientConnection::DoConnection(bool reconnect)
 	SetupPixelFormat();
 
 	// Fresh extension channel state for this connection; it opens when the
-	// server answers rfbEncodingExtCaps with its Caps.
-	m_ext->Reset();
+	// server answers rfbEncodingExtCaps with its Caps. Files are copied and
+	// pasted only if the clipboard is enabled and we may send input.
+	m_ext->ResetConnection(!m_opts->m_DisableClipboard && !m_opts->m_ViewOnly);
 
     SetFormatAndEncodings();
 
@@ -4751,7 +4752,7 @@ void ClientConnection::KillThread()
 		m_nQueueBufferLength = 0;
 	}
 	// After the socket is gone a blocked send returns, so this cannot hang.
-	m_ext->Stop();
+	m_ext->Shutdown();
 	WaitForSingleObject(KillEvent, 6000);
 }
 
@@ -4765,7 +4766,7 @@ void ClientConnection::SuspendThread()
 	ResetWheelInput();
 	m_bKillThread = true;
 	m_running = false;
-	m_ext->Reset();
+	m_ext->Disconnect();
 
 	// Reinit encoders stuff
 	delete(zis);
@@ -4828,7 +4829,7 @@ ClientConnection::~ClientConnection()
 {
 	// The sender thread uses the socket and crit; stop it first.
 	if (m_ext)
-		m_ext->Stop();
+		m_ext->Shutdown();
 
 	omni_mutex_lock l(m_bitmapdcMutex);
 	if (m_hwndStatus)

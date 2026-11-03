@@ -147,6 +147,11 @@ public:
 	ExtChannel(const ExtChannel&) = delete;
 	ExtChannel& operator=(const ExtChannel&) = delete;
 
+	// Channels this end supports, announced in Caps. Takes effect at the next
+	// Open(); call it before Open() / after Reset().
+	void SetLocalChannelMask(uint32_t mask) { m_localMask = mask | ChannelBit(kChControl); }
+	uint32_t LocalChannelMask() const { return m_localMask.load(); }
+
 	// Register the handler for complete messages on a channel (not Control).
 	// Call before Open() / before frames can arrive.
 	void SetHandler(uint8_t channel, Handler h);
@@ -229,7 +234,7 @@ private:
 	bool QueueControl(uint8_t subtype, const std::vector<uint8_t>& payload);
 	static uint64_t NowMicros();
 
-	const uint32_t m_localMask;
+	std::atomic<uint32_t> m_localMask;
 	std::array<Handler, kChannelCount> m_handlers;
 
 	// Sending side.

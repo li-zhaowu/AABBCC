@@ -11,6 +11,12 @@
 #include "vncExtChannel.h"
 #include "vncclient.h"
 #include "vsocket.h"
+#include "SettingsManager.h"
+#include "credentials.h"
+#include "HelperFunctions.h"
+#include "common/FileClipboard.h"
+
+#include <mutex>
 
 using namespace extmsg;
 
@@ -18,17 +24,91 @@ static_assert(rfbExtMsg == extmsg::kMsgType, "rfbExtMsg mismatch");
 static_assert(rfbEncodingExtCaps == extmsg::kCapsEncoding, "rfbEncodingExtCaps mismatch");
 static_assert(sz_rfbExtMsgHeader == extmsg::kHeaderSize, "sz_rfbExtMsgHeader mismatch");
 
-// Channels this server implements. Bits are added as the features land.
-static const uint32_t kServerChannels = 0;
+// Channels are enabled per client in OpenForClient().
+static const uint32_t kNoChannels = 0;
 
 vncServerExtChannel::vncServerExtChannel(vncClient* client)
-	: ExtChannel(kServerChannels), m_client(client)
+	: ExtChannel(kNoChannels), m_client(client)
 {
+	// Bulk data is sent while holding the update lock. Keep each batch small
+	// so that screen updates are not held back on slow links (64 KB is about
+	// 60 ms at 1 MB/s).
+	SetBatchBudget(64 * 1024);
 }
 
 vncServerExtChannel::~vncServerExtChannel()
 {
+	StopEngines();
 	Stop();
+}
+
+// Token of the user logged on to the console, for file access while the
+// server runs as LocalSystem. The engine closes the returned duplicate.
+static bool AcquireDesktopUserToken(HANDLE* token)
+{
+	*token = NULL;
+	if (!settings->RunningFromExternalService())
+		return true; // we already run as the desktop user
+	if (processHelper::IsWSLocked())
+		return false;
+	// DesktopUsersToken is not thread safe; serialise our calls and keep a
+	// private duplicate so that a later refresh cannot close it under us.
+	static std::mutex tokenMutex;
+	std::lock_guard<std::mutex> lk(tokenMutex);
+	HANDLE shared = DesktopUsersToken::getInstance()->getDesktopUsersToken();
+	if (!shared)
+		return false;
+	return DuplicateHandle(GetCurrentProcess(), shared, GetCurrentProcess(), token, 0, FALSE,
+		DUPLICATE_SAME_ACCESS) != FALSE;
+}
+
+void vncServerExtChannel::OpenForClient()
+{
+	if (m_openedForClient) {
+		Open(); // no-op once open
+		return;
+	}
+	m_openedForClient = true;
+
+	uint32_t mask = 0;
+
+	// File copy and paste follows the File Transfer permission, and needs a
+	// client that may use keyboard and mouse.
+	if (settings->getEnableFileTransfer() && m_client->m_keyboardenabled && m_client->m_pointerenabled) {
+		fileclip::Callbacks cb;
+		cb.send = [this](ExtPriority prio, uint8_t subtype, const std::vector<uint8_t>& payload) {
+			return Send(prio, kChFileClip, subtype, payload);
+		};
+		cb.log = [this](int level, const std::string& msg) { Log(level, msg); };
+		cb.acquireUserToken = &AcquireDesktopUserToken;
+		m_fileClip.reset(new fileclip::FileClipboard(cb));
+		if (m_fileClip->Start()) {
+			SetHandler(kChFileClip, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
+				m_fileClip->OnMessage(subtype, payload);
+			});
+			mask |= ChannelBit(kChFileClip);
+		} else {
+			m_fileClip.reset();
+		}
+	}
+
+	SetLocalChannelMask(mask);
+	Open();
+}
+
+void vncServerExtChannel::OnNegotiated(uint32_t mask)
+{
+	vnclog.Print(LL_INTINFO, VNCLOG("extension channels negotiated: 0x%x\n"), mask);
+	if (m_fileClip && (mask & ChannelBit(kChFileClip)))
+		m_fileClip->OnConnected();
+}
+
+void vncServerExtChannel::StopEngines()
+{
+	if (m_fileClip) {
+		m_fileClip->OnDisconnected();
+		m_fileClip->Stop();
+	}
 }
 
 bool vncServerExtChannel::ReadAndDispatch(VSocket* socket, int nTO)
@@ -64,6 +144,8 @@ void vncServerExtChannel::Shutdown()
 	// thread from exiting; shutting the socket down makes it fail at once.
 	if (IsOpen() && m_client->m_socket)
 		m_client->m_socket->Shutdown();
+	// Engines send through this channel; stop them first.
+	StopEngines();
 	Stop();
 }
 
@@ -105,4 +187,20 @@ void vncServerExtChannel::OnTransportError()
 void vncServerExtChannel::Log(int level, const std::string& msg)
 {
 	vnclog.Print(level == 0 ? LL_INTERR : LL_INTINFO, VNCLOG("%s\n"), msg.c_str());
+}
+
+void vncExtChannelInitServiceComSecurity()
+{
+	// Keep COM initialised on this thread for the lifetime of the process;
+	// CoInitializeSecurity needs it and applies to the whole process.
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
+		vnclog.Print(LL_INTERR, VNCLOG("CoInitializeEx failed 0x%lx\n"), static_cast<unsigned long>(hr));
+		return;
+	}
+	std::string error;
+	if (fileclip::FileClipboard::InitComSecurityForService(&error))
+		vnclog.Print(LL_INTINFO, VNCLOG("COM security set for file copy and paste\n"));
+	else
+		vnclog.Print(LL_INTERR, VNCLOG("%s; pasting files on this machine may fail\n"), error.c_str());
 }

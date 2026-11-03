@@ -146,7 +146,7 @@ void ExtChannel::Open()
 		m_thread = std::thread(&ExtChannel::SenderLoop, this);
 	}
 	Caps caps;
-	caps.channelMask = m_localMask;
+	caps.channelMask = m_localMask.load();
 	caps.maxFragment = kDefaultFragment;
 	QueueControl(kCtlCaps, EncodeCaps(caps));
 	Log(1, "extension channel opened");
@@ -232,7 +232,7 @@ bool ExtChannel::Send(ExtPriority prio, uint8_t channel, uint8_t subtype,
 		size_t offset = 0;
 		bool first = true;
 		do {
-			const size_t n = std::min(fragSize, len - offset);
+			const size_t n = (std::min)(fragSize, len - offset);
 			Frame f;
 			f.prio = static_cast<uint8_t>(prio);
 			f.hdr.channel = channel;
@@ -388,7 +388,7 @@ ExtChannel::RxResult ExtChannel::OnFrame(const Header& h, std::vector<uint8_t>& 
 
 	if (h.channel == kChControl) {
 		HandleControl(h.subtype, message);
-	} else if ((m_localMask & ChannelBit(h.channel)) && m_handlers[h.channel]) {
+	} else if ((m_localMask.load() & ChannelBit(h.channel)) && m_handlers[h.channel]) {
 		m_handlers[h.channel](h.subtype, message);
 	}
 	return RxResult::Ok;
@@ -404,7 +404,7 @@ void ExtChannel::HandleControl(uint8_t subtype, std::vector<uint8_t>& payload)
 			return;
 		}
 		m_peerFragment = std::max<uint32_t>(1024, peer.maxFragment);
-		m_negotiatedMask = (m_localMask & peer.channelMask) | ChannelBit(kChControl);
+		m_negotiatedMask = (m_localMask.load() & peer.channelMask) | ChannelBit(kChControl);
 		// Viewer side: the server's Caps are what allow us to start sending.
 		Open();
 		const bool first = !m_negotiated.exchange(true);
