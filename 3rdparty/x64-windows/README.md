@@ -12,6 +12,8 @@ installation paths are not required.
 | libjpeg-turbo | 2.1.5.1 | vcpkg x64-windows |
 | liblzma | 5.4.1 | vcpkg x64-windows |
 | bzip2 | 1.0.8 | vcpkg x64-windows |
+| ffnvcodec | 13.0.19.0 | FFmpeg nv-codec-headers, selected by the vcpkg baseline |
+| libyuv | d98915a654d3564e4802a0004add46221c4e4348 | Upstream revision selected by the vcpkg baseline, built with VS 2022 as a static x64 Release library using /MD |
 
 `FILES.json` records the original source path and SHA-256 for each copied file.
 Source paths are provenance only and are never used by the build.

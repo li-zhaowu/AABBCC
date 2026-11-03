@@ -158,7 +158,7 @@ void vncVideoStreamer::ThreadMain(Start start)
 	const auto interval = std::chrono::microseconds(1000000 / fps);
 	// Start at half the maximum and probe upwards: over the internet the
 	// maximum is often too much, and too much means lag.
-	uint32_t currentKbps = std::max(kMinKbps, bitrateKbps / 2);
+	uint32_t currentKbps = (std::max)(kMinKbps, bitrateKbps / 2);
 	// Skip encoding while more than about three frames wait to be sent.
 	auto queueBudget = [&] { return std::max<size_t>(256 * 1024, size_t(currentKbps) * 1000 / 8 / fps * 3); };
 
@@ -295,10 +295,10 @@ void vncVideoStreamer::ThreadMain(Start start)
 			skippedSinceRateCheck = 0;
 			uint32_t target = currentKbps;
 			if (congested) {
-				target = std::max(kMinKbps, currentKbps * 7 / 10);
+				target = (std::max)(kMinKbps, currentKbps * 7 / 10);
 				lastDecrease = now;
 			} else if (now - lastDecrease >= kRateGrowDelay) {
-				target = std::min(bitrateKbps, currentKbps + std::max<uint32_t>(250, bitrateKbps / 20));
+				target = (std::min)(bitrateKbps, currentKbps + std::max<uint32_t>(250, bitrateKbps / 20));
 				// The route may have changed: re-learn the base RTT now and then,
 				// but only while the link is calm.
 				if (now >= nextBaseRefresh) {

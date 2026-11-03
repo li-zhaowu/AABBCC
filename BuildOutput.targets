@@ -75,6 +75,11 @@ popd</Command>
       <Command>cl /nologo /MD /Fo"$(IntDir)buildtime.obj" /Fd"$(IntDir)buildtime.pdb" /c buildtime.cpp</Command>
     </PreLinkEvent>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64' And '$(MSBuildProjectName)' == 'vncviewer'">
+    <Link>
+      <AdditionalDependencies>yuv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
   <Target Name="AabbccCopyRuntimeDependencies" AfterTargets="Link"
           Condition="'$(Configuration)|$(Platform)' == 'Release|x64' And ('$(MSBuildProjectName)' == 'vncviewer' Or '$(MSBuildProjectName)' == 'winvnc')">
     <ItemGroup>
