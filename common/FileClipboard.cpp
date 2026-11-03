@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 
 #ifdef _MSC_VER
@@ -58,6 +59,11 @@ const UINT WMU_REVOKE     = WM_APP + 0x102;
 const UINT WMU_CHECK      = WM_APP + 0x103;
 const UINT WMU_DISCONNECT = WM_APP + 0x104;
 const UINT WMU_QUIT       = WM_APP + 0x105;
+
+// Clipboard change notifications can be missed (we have seen it depend on
+// how and as whom the process runs), so the sequence number is also polled.
+const UINT_PTR kPollTimerId = 1;
+const UINT kPollIntervalMs  = 500;
 
 const wchar_t kWindowClass[] = L"UltraVNCFileClipboard";
 
@@ -850,6 +856,13 @@ LRESULT FileClipboard::HandleWindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARA
 		OnLocalClipboardChanged(false);
 		return 0;
 	}
+	if (msg == WM_TIMER && wp == kPollTimerId) {
+		if (GetClipboardSequenceNumber() != m_lastClipSeq) {
+			Log(2, "file clipboard: change found by polling");
+			OnLocalClipboardChanged(false);
+		}
+		return 0;
+	}
 	if (msg == WMU_CHECK) {
 		OnLocalClipboardChanged(true);
 		return 0;
@@ -893,10 +906,15 @@ void FileClipboard::ClipThreadMain()
 	if (m_comOk) {
 		m_hwnd = CreateWindowExW(0, kWindowClass, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL,
 			GetModuleHandleW(NULL), this);
-		if (!m_hwnd)
+		if (!m_hwnd) {
 			Log(0, "file clipboard: CreateWindowEx failed, error " + std::to_string(GetLastError()));
-		else if (!AddClipboardFormatListener(m_hwnd))
-			Log(0, "file clipboard: AddClipboardFormatListener failed, error " + std::to_string(GetLastError()));
+		} else {
+			if (m_cb.useClipboardListener && !AddClipboardFormatListener(m_hwnd))
+				Log(0, "file clipboard: AddClipboardFormatListener failed, error " + std::to_string(GetLastError()));
+			m_lastClipSeq = GetClipboardSequenceNumber();
+			if (!SetTimer(m_hwnd, kPollTimerId, kPollIntervalMs, NULL))
+				Log(0, "file clipboard: SetTimer failed, error " + std::to_string(GetLastError()));
+		}
 	}
 	if (m_readyEvent)
 		SetEvent(m_readyEvent);
@@ -912,6 +930,7 @@ void FileClipboard::ClipThreadMain()
 			delete reinterpret_cast<RemoteOffer*>(msg.lParam);
 
 		RemoveRemoteObject();
+		KillTimer(m_hwnd, kPollTimerId);
 		RemoveClipboardFormatListener(m_hwnd);
 		HWND h = m_hwnd;
 		m_hwnd = NULL;
@@ -933,7 +952,9 @@ void FileClipboard::ApplyRemoteOffer(RemoteOffer* raw)
 	RemoteDataObject* obj = new RemoteDataObject(this, offer);
 	HRESULT hr = OleSetClipboard(obj);
 	if (FAILED(hr)) {
-		Log(0, "file clipboard: OleSetClipboard failed");
+		char buf[16];
+		snprintf(buf, sizeof(buf), "0x%08lx", static_cast<unsigned long>(hr));
+		Log(0, std::string("file clipboard: OleSetClipboard failed, hr ") + buf);
 		obj->Release();
 		return;
 	}
@@ -941,6 +962,8 @@ void FileClipboard::ApplyRemoteOffer(RemoteOffer* raw)
 		m_remoteObject->Release(); // OleSetClipboard already replaced it
 	m_remoteObject = obj;
 	m_remoteSeq = offer->seq;
+	Log(1, "file clipboard: " + std::to_string(offer->entries.size()) +
+		" entries from the peer are on the clipboard, ready to paste");
 }
 
 void FileClipboard::ApplyRemoteRevoke(uint32_t seq)
@@ -962,21 +985,33 @@ void FileClipboard::RemoveRemoteObject()
 	m_remoteSeq = 0;
 }
 
-void FileClipboard::OnLocalClipboardChanged(bool /*force*/)
+void FileClipboard::OnLocalClipboardChanged(bool force)
 {
+	// The listener and the poll timer can both report the same change.
+	const DWORD clipSeq = GetClipboardSequenceNumber();
+	if (!force && clipSeq == m_lastClipSeq)
+		return;
+	m_lastClipSeq = clipSeq;
+
 	if (!m_connected || m_stopping)
 		return;
 	// Virtual files put there by UltraVNC (this or another connection) are
 	// never offered back.
-	if (IsClipboardFormatAvailable(Fmt().marker))
+	if (IsClipboardFormatAvailable(Fmt().marker)) {
+		Log(2, "file clipboard: clipboard holds UltraVNC virtual files, not offered");
 		return;
+	}
 	if (!IsClipboardFormatAvailable(CF_HDROP)) {
+		Log(2, "file clipboard: clipboard changed, no files on it");
 		RevokeLocalOffer();
 		return;
 	}
 	std::vector<std::wstring> paths;
-	if (!ReadClipboardFiles(paths) || paths.empty())
+	if (!ReadClipboardFiles(paths) || paths.empty()) {
+		Log(0, "file clipboard: clipboard has files but the list could not be read");
 		return;
+	}
+	Log(1, "file clipboard: clipboard has " + std::to_string(paths.size()) + " file(s)/folder(s)");
 
 	Offer offer;
 	std::vector<LocalFile> files;
@@ -1012,13 +1047,15 @@ void FileClipboard::RevokeLocalOffer()
 bool FileClipboard::ReadClipboardFiles(std::vector<std::wstring>& paths)
 {
 	bool open = false;
-	for (int i = 0; i < 10 && !open; ++i) {
+	// Other programs (and UltraVNC's own text clipboard code) react to the
+	// same change; give them up to about a second.
+	for (int i = 0; i < 50 && !open; ++i) {
 		open = OpenClipboard(m_hwnd) != FALSE;
 		if (!open)
 			Sleep(20);
 	}
 	if (!open) {
-		Log(0, "file clipboard: could not open the clipboard");
+		Log(0, "file clipboard: could not open the clipboard, error " + std::to_string(GetLastError()));
 		return false;
 	}
 	HDROP drop = static_cast<HDROP>(GetClipboardData(CF_HDROP));
@@ -1043,7 +1080,7 @@ bool FileClipboard::BuildOffer(const std::vector<std::wstring>& paths, Offer& of
 {
 	HANDLE token = NULL;
 	if (m_cb.acquireUserToken && !m_cb.acquireUserToken(&token)) {
-		Log(0, "file clipboard: no user session, files not offered");
+		Log(0, "file clipboard: no user token (no user logged on?), files not offered");
 		return false;
 	}
 	bool overflow = false;
@@ -1051,7 +1088,7 @@ bool FileClipboard::BuildOffer(const std::vector<std::wstring>& paths, Offer& of
 		Impersonation imp(token);
 		if (imp.Failed(token)) {
 			CloseHandle(token);
-			Log(0, "file clipboard: impersonation failed, files not offered");
+			Log(0, "file clipboard: impersonation failed, error " + std::to_string(GetLastError()) + ", files not offered");
 			return false;
 		}
 
@@ -1112,8 +1149,11 @@ bool FileClipboard::BuildOffer(const std::vector<std::wstring>& paths, Offer& of
 			if (name.empty() || name.find(L':') != std::wstring::npos)
 				continue; // a drive root such as D:\ cannot be offered
 			WIN32_FILE_ATTRIBUTE_DATA fad;
-			if (!GetFileAttributesExW(LongPath(p).c_str(), GetFileExInfoStandard, &fad))
+			if (!GetFileAttributesExW(LongPath(p).c_str(), GetFileExInfoStandard, &fad)) {
+				Log(0, "file clipboard: cannot access " + WideToUtf8(p) + ", error " +
+					std::to_string(GetLastError()));
 				continue;
+			}
 			const uint64_t sz = (static_cast<uint64_t>(fad.nFileSizeHigh) << 32) | fad.nFileSizeLow;
 			walker.Add(p, name, fad.dwFileAttributes, sz, fad.ftLastWriteTime, 0);
 		}
@@ -1203,8 +1243,11 @@ void FileClipboard::ServeRead(const Read& rd)
 		uint32_t err = 0;
 		{
 			std::lock_guard<std::mutex> lk(m_srcMutex);
-			if (m_localSeq == 0 || rd.seq != m_localSeq)
+			if (m_localSeq == 0 || rd.seq != m_localSeq) {
 				err = kErrStaleOffer;
+				Log(0, "file clipboard: read for offer " + std::to_string(rd.seq) +
+					" but the current offer is " + std::to_string(m_localSeq));
+			}
 			else if (rd.fileId >= m_localFiles.size() || m_localFiles[rd.fileId].directory)
 				err = kErrBadFile;
 			else
@@ -1218,24 +1261,32 @@ void FileClipboard::ServeRead(const Read& rd)
 		}
 		HANDLE token = NULL;
 		if (m_cb.acquireUserToken && !m_cb.acquireUserToken(&token)) {
+			Log(0, "file clipboard: no user token, cannot open " + WideToUtf8(path));
 			fail(kErrOpen);
 			return;
 		}
 		HANDLE h = INVALID_HANDLE_VALUE;
+		DWORD openError = 0;
 		{
 			Impersonation imp(token);
-			if (!imp.Failed(token))
+			if (imp.Failed(token)) {
+				openError = GetLastError();
+			} else {
 				h = CreateFileW(LongPath(path).c_str(), GENERIC_READ,
 					FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
 					FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+				if (h == INVALID_HANDLE_VALUE)
+					openError = GetLastError();
+			}
 		}
 		if (token)
 			CloseHandle(token);
 		if (h == INVALID_HANDLE_VALUE) {
-			Log(0, "file clipboard: cannot open " + WideToUtf8(path));
+			Log(0, "file clipboard: cannot open " + WideToUtf8(path) + ", error " + std::to_string(openError));
 			fail(kErrOpen);
 			return;
 		}
+		Log(2, "file clipboard: serving " + WideToUtf8(path));
 		OpenFile of;
 		of.handle = h;
 		it = m_open.emplace(id, of).first;
@@ -1257,6 +1308,7 @@ void FileClipboard::ServeRead(const Read& rd)
 		const DWORD want = static_cast<DWORD>(std::min<size_t>(remaining, buf.size()));
 		DWORD got = 0;
 		if (!ReadFile(h, buf.data(), want, &got, NULL)) {
+			Log(0, "file clipboard: read failed, error " + std::to_string(GetLastError()));
 			fail(kErrRead);
 			return;
 		}

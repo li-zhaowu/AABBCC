@@ -7426,6 +7426,9 @@ void vncClient::SendServerStateUpdate(CARD32 state, CARD32 value)
 		rsmsg.state = Swap32IfLE(state);
 		rsmsg.value = Swap32IfLE(value);
 
+		// Other threads (extension channel) send too; the update lock
+		// serialises use of the socket's send queue.
+		omni_mutex_lock l(GetUpdateLock(), 256);
 		m_socket->SendExact((char*)&rsmsg, sz_rfbServerStateMsg, rfbServerState);
 	}
 }
@@ -7436,6 +7439,7 @@ void vncClient::SendMonitorInfo()
 	memset(&mm, 0, sizeof mm);
 	mm.type = rfbMonitorInfo;
 	mm.nbr = m_encodemgr.m_buffer->m_desktop->nr_monitors;
+	omni_mutex_lock l(GetUpdateLock(), 257);
 	m_socket->SendExact((char*)&mm, sz_rfbMonitorMsg, rfbMonitorInfo);
 }
 
@@ -7466,6 +7470,7 @@ void vncClient::SendFTProtocolMsg()
 	ft.contentType = rfbFileTransferProtocolVersion;
 	ft.contentParam = FT_PROTO_VERSION_4;
 	ft.size = Swap32IfLE(sz_rfbBlockSize);
+	omni_mutex_lock l(GetUpdateLock(), 258);
 	m_socket->SendExact((char*)&ft, sz_rfbFileTransferMsg, rfbFileTransfer);
 }
 
@@ -7481,6 +7486,7 @@ void vncClient::NotifyExtendedClipboardSupport()
 	msg.length = Swap32IfLE(-extendedDataMessage.GetDataLength());
 
 	//adzm 2010-09 - minimize packets. SendExact flushes the queue.
+	omni_mutex_lock l(GetUpdateLock(), 259);
 	m_socket->SendExactQueue((char*)&msg, sz_rfbServerCutTextMsg, rfbServerCutText);
 	m_socket->SendExact((char*)(extendedDataMessage.GetData()), extendedDataMessage.GetDataLength());
 }
@@ -7503,6 +7509,8 @@ void vncClient::NotifyPluginStreamingSupport()
 	msg.type = rfbNotifyPluginStreaming;
 
 	//adzm 2010-09 - minimize packets. SendExact flushes the queue.
+	// Switch the output mode atomically with respect to other senders.
+	omni_mutex_lock l(GetUpdateLock(), 260);
 	m_socket->SendExact((char*)&msg, sz_rfbNotifyPluginStreamingMsg, rfbNotifyPluginStreaming);
 	m_socket->SetPluginStreamingOut();
 }

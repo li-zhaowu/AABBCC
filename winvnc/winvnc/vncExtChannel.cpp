@@ -13,7 +13,6 @@
 #include "vsocket.h"
 #include "SettingsManager.h"
 #include "credentials.h"
-#include "HelperFunctions.h"
 #include "common/FileClipboard.h"
 
 #include <mutex>
@@ -49,15 +48,18 @@ static bool AcquireDesktopUserToken(HANDLE* token)
 	*token = NULL;
 	if (!settings->RunningFromExternalService())
 		return true; // we already run as the desktop user
-	if (processHelper::IsWSLocked())
-		return false;
+	// No lock-screen check here: IsWSLocked() looks for LogonUI.exe, which
+	// on some systems stays in the session after unlocking and made every
+	// remote-to-local copy fail. A logged-on user's token is what matters.
 	// DesktopUsersToken is not thread safe; serialise our calls and keep a
 	// private duplicate so that a later refresh cannot close it under us.
 	static std::mutex tokenMutex;
 	std::lock_guard<std::mutex> lk(tokenMutex);
 	HANDLE shared = DesktopUsersToken::getInstance()->getDesktopUsersToken();
-	if (!shared)
+	if (!shared) {
+		vnclog.Print(LL_INTERR, VNCLOG("file clipboard: no desktop user token\n"));
 		return false;
+	}
 	return DuplicateHandle(GetCurrentProcess(), shared, GetCurrentProcess(), token, 0, FALSE,
 		DUPLICATE_SAME_ACCESS) != FALSE;
 }
