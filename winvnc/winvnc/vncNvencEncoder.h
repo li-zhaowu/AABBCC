@@ -8,7 +8,7 @@
 //
 
 // NVIDIA hardware encoder (NVENC) for video mode. Encodes BGRA D3D11
-// textures to H.264 / HEVC with a low latency configuration: no B frames,
+// textures to H.264 / HEVC / AV1 with a low latency configuration: no B frames,
 // CBR, endless GOP with IDR frames only on request.
 //
 // The NVENC API header comes from the NVIDIA Video Codec SDK (MIT license),
@@ -39,7 +39,8 @@ public:
 	// header we were built with. Cheap after the first call.
 	static bool IsAvailable(std::string* why);
 
-	// codec: video::kCodecH264 or video::kCodecHevc.
+	// codec: video::kCodecH264, kCodecHevc or kCodecAv1. Fails (with a
+	// message) if the GPU has no encoder for it.
 	bool Open(ID3D11Device* device, int width, int height, int fps, uint32_t bitrateKbps,
 	          uint8_t codec, std::string& error);
 	void Close();

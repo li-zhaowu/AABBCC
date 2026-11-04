@@ -218,10 +218,7 @@ void ClientConnection::LeaveWindowMode(bool tellServer)
 		// Video mode is still on: back to the monitor stream.
 		m_videoActive = false;
 		m_videoNeedKey = true;
-		video::Start start;
-		start.codec = !m_videoForceSoftware && VideoDecoder::HardwareAvailable(video::kCodecHevc)
-			? video::kCodecHevc : video::kCodecH264;
-		SendVideoMessage(video::kStart, video::EncodeStart(start));
+		SendVideoMessage(video::kStart, video::EncodeStart(MakeVideoStart()));
 	}
 	CheckMenuItem(GetSystemMenu(m_hwndMain, FALSE), ID_WINDOWMODE, MF_BYCOMMAND | MF_UNCHECKED);
 	WindowLog(1, "back to the desktop");

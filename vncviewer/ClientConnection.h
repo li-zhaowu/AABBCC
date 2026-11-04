@@ -526,6 +526,7 @@ private:
 	static UINT VideoModeEndedMessage();
 	bool SendVideoMessage(uint8_t subtype, const std::vector<uint8_t>& payload);
 	void ToggleVideoMode();
+	video::Start MakeVideoStart();
 	void StopVideoMode(bool tellServer);
 	void OnVideoModeEnded(WPARAM statusCode);
 	void ResetVideoState();

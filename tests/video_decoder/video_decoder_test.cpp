@@ -6,17 +6,23 @@
 //
 
 // Test of vncviewer/VideoDecoder (Media Foundation) on Windows or Wine.
-// Input: an H.264 Annex B file with access unit delimiters, made of frames
-// of one solid colour (see run.sh). Checks picture size and the decoded
-// Y / U / V values, which catches stride and plane offset mistakes.
+// Input: frames of one solid colour (see run.sh), as
+//   .h264 / .h265  Annex B with access unit delimiters, or
+//   .obu           AV1 low overhead OBU stream with temporal delimiters
+//                  (what NVENC sends).
+// Checks picture size and the decoded Y / U / V values, which catches
+// stride and plane offset mistakes.
 //
-//   video_decoder_test.exe file.h264 width height Y U V
+//   video_decoder_test.exe file.h264|file.h265|file.obu width height Y U V
+//
+// Wine has no HEVC or AV1 decoder; run those on Windows (see run.sh).
 
 #include "../../vncviewer/VideoDecoder.h"
 #include "../../common/VideoProto.h"
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 static int g_failures = 0;
@@ -29,12 +35,14 @@ static int g_failures = 0;
 		}                                                                        \
 	} while (0)
 
-// Split an Annex B stream at access unit delimiters (NAL type 9).
-static std::vector<std::vector<uint8_t>> SplitAccessUnits(const std::vector<uint8_t>& s)
+// Split an Annex B stream at access unit delimiters (H.264 NAL type 9,
+// HEVC NAL type 35).
+static std::vector<std::vector<uint8_t>> SplitAccessUnits(const std::vector<uint8_t>& s, bool hevc)
 {
 	std::vector<size_t> starts;
 	for (size_t i = 0; i + 4 < s.size(); ++i) {
-		if (s[i] == 0 && s[i + 1] == 0 && s[i + 2] == 0 && s[i + 3] == 1 && (s[i + 4] & 0x1F) == 9)
+		if (s[i] == 0 && s[i + 1] == 0 && s[i + 2] == 0 && s[i + 3] == 1 &&
+		    (hevc ? ((s[i + 4] >> 1) & 0x3F) == 35 : (s[i + 4] & 0x1F) == 9))
 			starts.push_back(i);
 	}
 	std::vector<std::vector<uint8_t>> aus;
@@ -45,12 +53,51 @@ static std::vector<std::vector<uint8_t>> SplitAccessUnits(const std::vector<uint
 	return aus;
 }
 
+// Split an AV1 OBU stream (every OBU with a size field) into temporal
+// units, each starting with a temporal delimiter OBU (type 2).
+static std::vector<std::vector<uint8_t>> SplitTemporalUnits(const std::vector<uint8_t>& s)
+{
+	std::vector<size_t> starts;
+	size_t i = 0;
+	while (i < s.size()) {
+		const uint8_t header = s[i];
+		const int type = (header >> 3) & 0x0F;
+		size_t p = i + 1 + ((header & 0x04) ? 1 : 0); // extension byte
+		if (!(header & 0x02) || p >= s.size())
+			break; // no size field: not a low overhead stream
+		uint64_t size = 0;
+		for (int k = 0; k < 8 && p < s.size(); ++k) {
+			const uint8_t b = s[p++];
+			size |= uint64_t(b & 0x7F) << (7 * k);
+			if (!(b & 0x80))
+				break;
+		}
+		if (type == 2)
+			starts.push_back(i);
+		if (size > s.size() - p)
+			break;
+		i = p + size_t(size);
+	}
+	std::vector<std::vector<uint8_t>> tus;
+	for (size_t k = 0; k < starts.size(); ++k) {
+		const size_t end = k + 1 < starts.size() ? starts[k + 1] : s.size();
+		tus.emplace_back(s.begin() + starts[k], s.begin() + end);
+	}
+	return tus;
+}
+
+static bool EndsWith(const char* s, const char* suffix)
+{
+	const size_t a = strlen(s), b = strlen(suffix);
+	return a >= b && _stricmp(s + a - b, suffix) == 0;
+}
+
 static bool Near(int a, int b, int tol) { return a >= b - tol && a <= b + tol; }
 
 int main(int argc, char** argv)
 {
 	if (argc < 7) {
-		std::fprintf(stderr, "usage: %s file.h264 width height Y U V\n", argv[0]);
+		std::fprintf(stderr, "usage: %s file.h264|file.h265|file.obu width height Y U V\n", argv[0]);
 		return 2;
 	}
 	const int w = atoi(argv[2]), h = atoi(argv[3]);
@@ -67,7 +114,10 @@ int main(int argc, char** argv)
 	while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
 		data.insert(data.end(), buf, buf + n);
 	fclose(f);
-	auto aus = SplitAccessUnits(data);
+	const uint8_t codec = EndsWith(argv[1], ".obu") ? video::kCodecAv1
+		: (EndsWith(argv[1], ".h265") || EndsWith(argv[1], ".hevc")) ? video::kCodecHevc : video::kCodecH264;
+	auto aus = codec == video::kCodecAv1 ? SplitTemporalUnits(data) : SplitAccessUnits(data, codec == video::kCodecHevc);
+	std::printf("%s: %zu frames\n", video::CodecName(codec), aus.size());
 	CHECK(aus.size() >= 10);
 
 	for (int pass = 0; pass < 2; ++pass) {
@@ -76,7 +126,7 @@ int main(int argc, char** argv)
 	const bool allowHw = pass == 0;
 	VideoDecoder dec;
 	std::string err;
-	CHECK(dec.Open(video::kCodecH264, w, h, 30, allowHw, err));
+	CHECK(dec.Open(codec, w, h, 30, allowHw, err));
 	if (!err.empty())
 		std::fprintf(stderr, "open: %s\n", err.c_str());
 	std::printf("pass %d: %s decoding\n", pass, dec.IsHardware() ? "GPU" : "software");
@@ -109,7 +159,7 @@ int main(int argc, char** argv)
 			// software from the next keyframe (here: the start).
 			std::printf("GPU decoding failed (%s), falling back to software\n", decodeError.c_str());
 			fellBack = true;
-			CHECK(dec.Open(video::kCodecH264, w, h, 30, false, err));
+			CHECK(dec.Open(codec, w, h, 30, false, err));
 			pictures = 0;
 			firstPictureAfter = -1;
 			i = static_cast<size_t>(-1);
@@ -129,8 +179,9 @@ int main(int argc, char** argv)
 	junk[0] = 0; junk[1] = 0; junk[2] = 0; junk[3] = 1; junk[4] = 0x65;
 	dec.Decode(junk.data(), junk.size(), 0, [](const VideoDecoder::Picture&) {}, err);
 	}
-	std::printf("GPU H.264 decoding available: %s\n",
-		VideoDecoder::HardwareAvailable(video::kCodecH264) ? "yes" : "no");
+	for (uint8_t c : { uint8_t(video::kCodecH264), uint8_t(video::kCodecHevc), uint8_t(video::kCodecAv1) })
+		std::printf("GPU %s decoding available: %s\n", video::CodecName(c),
+			VideoDecoder::HardwareAvailable(c) ? "yes" : "no");
 
 	if (g_failures) {
 		std::fprintf(stderr, "%d check(s) failed\n", g_failures);

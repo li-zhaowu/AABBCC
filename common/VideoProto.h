@@ -44,7 +44,11 @@ enum Subtype : uint8_t {
 enum Codec : uint8_t {
 	kCodecH264 = 1,
 	kCodecHevc = 2,
+	kCodecAv1  = 3, // NVENC on RTX 40 and newer; low overhead OBU stream
 };
+
+constexpr uint8_t CodecBit(uint8_t codec) { return codec < 8 ? uint8_t(1u << codec) : 0; }
+const char* CodecName(uint8_t codec);
 
 enum FrameFlags : uint8_t {
 	kFrameKey = 0x01, // IDR: decoding can start here
@@ -81,7 +85,15 @@ struct Start {
 	uint32_t maxBitrateKbps = kDefaultBitrateKbps;
 	uint16_t maxWidth = 0;   // 0 = no limit
 	uint16_t maxHeight = 0;
+	// Codecs the viewer can decode (CodecBit()); `codec` is the preferred
+	// one. If the server cannot encode it, it takes the next best of these.
+	// Missing in older viewers: the preferred codec and H.264.
+	uint8_t codecMask = CodecBit(kCodecH264);
 };
+
+// Codecs to try for a Start, best first: the preferred one, then AV1, HEVC,
+// H.264 as far as the viewer accepts them. H.264 is always last.
+std::vector<uint8_t> CodecCandidates(const Start& s);
 
 struct Config {
 	uint32_t streamId = 0;   // frames carry it; older streams are ignored

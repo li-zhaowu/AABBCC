@@ -32,6 +32,7 @@ std::vector<uint8_t> EncodeStart(const Start& s)
 	PutU32(v, s.maxBitrateKbps);
 	PutU16(v, s.maxWidth);
 	PutU16(v, s.maxHeight);
+	v.push_back(static_cast<uint8_t>(s.codecMask | CodecBit(s.codec)));
 	return v;
 }
 
@@ -45,7 +46,35 @@ bool DecodeStart(const uint8_t* p, size_t len, Start& out)
 	out.maxBitrateKbps = GetU32(p + 4);
 	out.maxWidth = GetU16(p + 8);
 	out.maxHeight = GetU16(p + 10);
+	out.codecMask = len >= 13 ? p[12] : CodecBit(out.codec);
+	out.codecMask |= CodecBit(kCodecH264);
 	return out.maxFps > 0 && out.maxBitrateKbps > 0;
+}
+
+const char* CodecName(uint8_t codec)
+{
+	switch (codec) {
+	case kCodecH264: return "H.264";
+	case kCodecHevc: return "HEVC";
+	case kCodecAv1: return "AV1";
+	default: return "unknown codec";
+	}
+}
+
+std::vector<uint8_t> CodecCandidates(const Start& s)
+{
+	std::vector<uint8_t> out;
+	const uint8_t mask = static_cast<uint8_t>(s.codecMask | CodecBit(s.codec) | CodecBit(kCodecH264));
+	for (uint8_t c : { s.codec, uint8_t(kCodecAv1), uint8_t(kCodecHevc), uint8_t(kCodecH264) }) {
+		const bool known = c == kCodecH264 || c == kCodecHevc || c == kCodecAv1;
+		if (known && (mask & CodecBit(c)) && std::find(out.begin(), out.end(), c) == out.end())
+			out.push_back(c);
+	}
+	// The preferred codec stays first; among the fallbacks H.264 comes last
+	// (every viewer decodes it).
+	if (!out.empty() && out[0] == kCodecH264)
+		out.resize(1);
+	return out;
 }
 
 std::vector<uint8_t> EncodeConfig(const Config& c)

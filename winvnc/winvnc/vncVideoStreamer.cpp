@@ -49,6 +49,27 @@ constexpr auto kStatsInterval = std::chrono::seconds(10);
 // Bitrate adaptation: common/RateController.
 constexpr uint32_t kMinKbps = RateController::kMinKbps;
 
+// Open the encoder with the best codec that the viewer decodes and this GPU
+// encodes. A codec that fails is dropped from `candidates`, so that later
+// re-opens (resolution changes) do not try it again.
+bool OpenBestCodec(vncNvencEncoder& encoder, ID3D11Device* device, int width, int height, int fps,
+                   uint32_t kbps, std::vector<uint8_t>& candidates, uint8_t& codec, std::string& error,
+                   const std::function<void(const std::string&)>& log)
+{
+	while (!candidates.empty()) {
+		codec = candidates.front();
+		if (encoder.Open(device, width, height, fps, kbps, codec, error))
+			return true;
+		if (candidates.size() == 1)
+			return false; // keep the last one: the error may be temporary
+		const uint8_t next = candidates[1];
+		log(std::string(CodecName(codec)) + " not available (" + error + "), trying " + CodecName(next));
+		candidates.erase(candidates.begin());
+	}
+	error = "no codec to encode with";
+	return false;
+}
+
 // D3D11 device on the first NVIDIA adapter (for the external stream, which
 // has no capture device of its own).
 bool CreateNvidiaDevice(ID3D11Device** device, ID3D11DeviceContext** context, std::string& error)
@@ -243,9 +264,11 @@ void vncVideoStreamer::ThreadMain(Start start)
 {
 	const int fps = std::clamp<int>(start.maxFps, 1, 120);
 	const uint32_t bitrateKbps = std::clamp<uint32_t>(start.maxBitrateKbps, kMinKbps, 200000);
-	uint8_t codec = start.codec == kCodecHevc ? kCodecHevc : kCodecH264;
+	std::vector<uint8_t> candidates = CodecCandidates(start);
+	uint8_t codec = candidates.front();
 	const auto interval = std::chrono::microseconds(1000000 / fps);
 	RateController rate(bitrateKbps, Clock::now());
+	const auto logInfo = [this](const std::string& msg) { Log(1, msg); };
 
 	timeBeginPeriod(1); // 1 ms sleep resolution for the frame pacing
 
@@ -272,16 +295,9 @@ void vncVideoStreamer::ThreadMain(Start start)
 			return false;
 		if (!encoder.IsOpen() || encoder.Width() != (capture.Width() & ~1) ||
 		    encoder.Height() != (capture.Height() & ~1)) {
-			bool opened = encoder.Open(capture.Device(), capture.Width(), capture.Height(), fps, rate.Current(),
-				codec, error);
-			if (!opened && codec == kCodecHevc) {
-				// Older GPUs have no HEVC encoder: fall back to H.264.
-				Log(1, "HEVC not available (" + error + "), using H.264");
-				codec = kCodecH264;
-				opened = encoder.Open(capture.Device(), capture.Width(), capture.Height(), fps, rate.Current(),
-					codec, error);
-			}
-			if (!opened)
+			// Older GPUs have no AV1 / HEVC encoder: fall back.
+			if (!OpenBestCodec(encoder, capture.Device(), capture.Width(), capture.Height(), fps, rate.Current(),
+				    candidates, codec, error, logInfo))
 				return false;
 		}
 		Config cfg;
@@ -298,8 +314,7 @@ void vncVideoStreamer::ThreadMain(Start start)
 		frameNo = 0;
 		forceIdr = true;
 		Log(1, "streaming " + std::to_string(cfg.width) + "x" + std::to_string(cfg.height) + " at " +
-			std::to_string(fps) + " fps, " + std::to_string(cfg.bitrateKbps) + " kbps, " +
-			(codec == kCodecHevc ? "HEVC" : "H.264"));
+			std::to_string(fps) + " fps, " + std::to_string(cfg.bitrateKbps) + " kbps, " + CodecName(codec));
 		return true;
 	};
 
@@ -439,9 +454,11 @@ void vncVideoStreamer::ExternalThreadMain(Start start)
 {
 	const int fps = std::clamp<int>(start.maxFps, 1, 120);
 	const uint32_t bitrateKbps = std::clamp<uint32_t>(start.maxBitrateKbps, kMinKbps, 200000);
-	uint8_t codec = start.codec == kCodecHevc ? kCodecHevc : kCodecH264;
+	std::vector<uint8_t> candidates = CodecCandidates(start);
+	uint8_t codec = candidates.front();
 	const auto interval = std::chrono::microseconds(1000000 / fps);
 	RateController rate(bitrateKbps, Clock::now());
+	const auto logInfo = [this](const std::string& msg) { Log(1, msg); };
 	std::string error;
 
 	auto fail = [&](uint32_t code, const std::string& message) {
@@ -540,13 +557,7 @@ void vncVideoStreamer::ExternalThreadMain(Start start)
 					fail(kStatusEncoderError, "CreateTexture2D for the window video failed");
 					break;
 				}
-				bool opened = encoder.Open(device, w, h, fps, rate.Current(), codec, error);
-				if (!opened && codec == kCodecHevc) {
-					Log(1, "HEVC not available (" + error + "), using H.264");
-					codec = kCodecH264;
-					opened = encoder.Open(device, w, h, fps, rate.Current(), codec, error);
-				}
-				if (!opened) {
+				if (!OpenBestCodec(encoder, device, w, h, fps, rate.Current(), candidates, codec, error, logInfo)) {
 					fail(kStatusEncoderError, error);
 					break;
 				}
@@ -562,7 +573,7 @@ void vncVideoStreamer::ExternalThreadMain(Start start)
 				cfg.bitrateKbps = encoder.BitrateKbps();
 				m_cb.send(kPrioControl, kConfig, EncodeConfig(cfg));
 				Log(1, "window video " + std::to_string(w) + "x" + std::to_string(h) + ", " +
-					std::to_string(cfg.bitrateKbps) + " kbps, " + (codec == kCodecHevc ? "HEVC" : "H.264"));
+					std::to_string(cfg.bitrateKbps) + " kbps, " + CodecName(codec));
 				frameNo = 0;
 				idr = true;
 			}

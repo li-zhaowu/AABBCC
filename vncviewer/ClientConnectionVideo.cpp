@@ -8,7 +8,7 @@
 //
 
 // Video mode, viewer side (docs/design.md section 3). The server streams one
-// monitor as H.264/HEVC on extension channel 4; we decode it with Media
+// monitor as H.264/HEVC/AV1 on extension channel 4; we decode it with Media
 // Foundation and write the pictures into the normal framebuffer, so scaling,
 // full screen, snapshots etc. keep working. While video mode is on, no
 // framebuffer updates are requested.
@@ -110,12 +110,7 @@ void ClientConnection::ToggleVideoMode()
 		return;
 	}
 
-	video::Start start; // 60 fps, up to 20 Mbps (design defaults)
-	// HEVC gives better pictures per bit, but decoding it in software is
-	// heavy: ask for it only if this machine decodes it on the GPU. The
-	// server falls back to H.264 if its GPU cannot encode HEVC.
-	start.codec = !m_videoForceSoftware && VideoDecoder::HardwareAvailable(video::kCodecHevc)
-		? video::kCodecHevc : video::kCodecH264;
+	video::Start start = MakeVideoStart();
 	m_videoNeedKey = true;
 	m_videoRequested = true;
 	// Showing one window: the server only takes the parameters, then the
@@ -129,7 +124,29 @@ void ClientConnection::ToggleVideoMode()
 	if (m_windowRequested)
 		SelectWindowTransport();
 	CheckMenuItem(GetSystemMenu(m_hwndMain, FALSE), ID_VIDEOMODE, MF_BYCOMMAND | MF_CHECKED);
-	VideoLog(1, std::string("requested, ") + (start.codec == video::kCodecHevc ? "HEVC" : "H.264"));
+	std::string offered;
+	for (uint8_t c : video::CodecCandidates(start))
+		offered += std::string(offered.empty() ? "" : ", ") + video::CodecName(c);
+	VideoLog(1, "requested, codecs " + offered);
+}
+
+// Start parameters: 60 fps, up to 20 Mbps (design defaults), codecs.
+video::Start ClientConnection::MakeVideoStart()
+{
+	video::Start start;
+	// AV1 and HEVC give better pictures per bit, but decoding them in
+	// software is heavy: offer them only if this machine decodes them on the
+	// GPU. The server takes the best one its GPU can encode (AV1: RTX 40 and
+	// newer), else H.264.
+	start.codecMask = video::CodecBit(video::kCodecH264);
+	if (!m_videoForceSoftware) {
+		for (uint8_t c : { uint8_t(video::kCodecHevc), uint8_t(video::kCodecAv1) })
+			if (VideoDecoder::HardwareAvailable(c))
+				start.codecMask |= video::CodecBit(c);
+	}
+	start.codec = (start.codecMask & video::CodecBit(video::kCodecAv1)) ? video::kCodecAv1
+		: (start.codecMask & video::CodecBit(video::kCodecHevc)) ? video::kCodecHevc : video::kCodecH264;
+	return start;
 }
 
 // UI thread.
@@ -218,7 +235,7 @@ void ClientConnection::OnVideoMessage(uint8_t subtype, std::vector<uint8_t>& pay
 		m_videoActive = true;
 		VideoLog(1, "stream " + std::to_string(cfg.streamId) + ": " + std::to_string(cfg.width) + "x" +
 			std::to_string(cfg.height) + " at " + std::to_string(cfg.x) + "," + std::to_string(cfg.y) + ", " +
-			(cfg.codec == video::kCodecHevc ? "HEVC" : "H.264") + ", " +
+			video::CodecName(cfg.codec) + ", " +
 			(m_videoDecoder->IsHardware() ? "GPU" : "software") + " decoding");
 		break;
 	}

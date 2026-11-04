@@ -97,8 +97,9 @@ bool vncNvencEncoder::Open(ID3D11Device* device, int width, int height, int fps,
 	m_height = height & ~1;
 	m_fps = fps > 0 ? fps : video::kDefaultFps;
 	m_bitrateKbps = bitrateKbps;
-	const GUID codecGuid = codec == video::kCodecHevc ? NV_ENC_CODEC_HEVC_GUID : NV_ENC_CODEC_H264_GUID;
-	if (codec != video::kCodecHevc && (m_width > 4096 || m_height > 4096)) {
+	const GUID codecGuid = codec == video::kCodecAv1 ? NV_ENC_CODEC_AV1_GUID
+		: codec == video::kCodecHevc ? NV_ENC_CODEC_HEVC_GUID : NV_ENC_CODEC_H264_GUID;
+	if (codec == video::kCodecH264 && (m_width > 4096 || m_height > 4096)) {
 		error = "H.264 supports at most 4096x4096";
 		return false;
 	}
@@ -118,6 +119,24 @@ bool vncNvencEncoder::Open(ID3D11Device* device, int width, int height, int fps,
 		error = NvError("nvEncOpenEncodeSessionEx", st);
 		Close();
 		return false;
+	}
+
+	// Is the codec there at all? (AV1 needs an RTX 40 or newer, HEVC a
+	// GTX 950 / 10 series or newer.) A clear message beats an init error.
+	{
+		uint32_t count = 0, got = 0;
+		bool found = false;
+		if (g_api.nvEncGetEncodeGUIDCount(m_encoder, &count) == NV_ENC_SUCCESS && count > 0) {
+			std::vector<GUID> guids(count);
+			if (g_api.nvEncGetEncodeGUIDs(m_encoder, guids.data(), count, &got) == NV_ENC_SUCCESS)
+				for (uint32_t i = 0; i < got && !found; ++i)
+					found = IsEqualGUID(guids[i], codecGuid) != 0;
+		}
+		if (!found) {
+			error = std::string("this GPU cannot encode ") + video::CodecName(codec);
+			Close();
+			return false;
+		}
 	}
 
 	// Start from the driver's low latency preset and adjust.
@@ -142,7 +161,14 @@ bool vncNvencEncoder::Open(ID3D11Device* device, int width, int height, int fps,
 	// so a big change on screen does not cause a burst that queues up.
 	m_config.rcParams.vbvBufferSize = m_bitrateKbps * 1000 / m_fps;
 	m_config.rcParams.vbvInitialDelay = m_config.rcParams.vbvBufferSize;
-	if (codec == video::kCodecHevc) {
+	if (codec == video::kCodecAv1) {
+		// Low overhead OBU stream (what Media Foundation's AV1 decoder
+		// takes); the sequence header comes again with every key frame.
+		m_config.encodeCodecConfig.av1Config.idrPeriod = NVENC_INFINITE_GOPLENGTH;
+		m_config.encodeCodecConfig.av1Config.repeatSeqHdr = 1;
+		m_config.encodeCodecConfig.av1Config.outputAnnexBFormat = 0;
+		m_config.encodeCodecConfig.av1Config.disableSeqHdr = 0;
+	} else if (codec == video::kCodecHevc) {
 		m_config.encodeCodecConfig.hevcConfig.idrPeriod = NVENC_INFINITE_GOPLENGTH;
 		m_config.encodeCodecConfig.hevcConfig.repeatSPSPPS = 1;
 	} else {
@@ -283,7 +309,9 @@ bool vncNvencEncoder::Encode(ID3D11Texture2D* source, bool forceIdr, uint64_t ti
 		if (st == NV_ENC_SUCCESS) {
 			const uint8_t* p = static_cast<const uint8_t*>(lock.bitstreamBufferPtr);
 			out.assign(p, p + lock.bitstreamSizeInBytes);
-			isKeyframe = lock.pictureType == NV_ENC_PIC_TYPE_IDR;
+			// No B frames or look-ahead: the output is the picture just
+			// sent, so a forced IDR is a key frame (AV1 may report it as I).
+			isKeyframe = lock.pictureType == NV_ENC_PIC_TYPE_IDR || forceIdr;
 			g_api.nvEncUnlockBitstream(m_encoder, m_bitstream);
 		} else {
 			ok = false;

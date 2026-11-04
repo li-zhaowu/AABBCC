@@ -12,6 +12,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 using namespace video;
 
@@ -51,7 +53,34 @@ int main()
 	CHECK(DecodeStart(b.data(), b.size(), so));
 	CHECK(so.codec == kCodecHevc && so.maxFps == 30 && so.maxBitrateKbps == 123456 &&
 	      so.maxWidth == 3840 && so.maxHeight == 2160 && so.flags == kStartParamsOnly);
-	CheckTruncations(s, EncodeStart, DecodeStart);
+	CHECK(so.codecMask == (CodecBit(kCodecHevc) | CodecBit(kCodecH264)));
+	{
+		// Truncations up to the 12 byte form of older viewers are rejected.
+		for (size_t n = 0; n < 12; ++n)
+			CHECK(!DecodeStart(b.data(), n, so));
+		// Older viewers: no codec mask, so the preferred codec and H.264.
+		CHECK(DecodeStart(b.data(), 12, so));
+		CHECK(so.codecMask == (CodecBit(kCodecHevc) | CodecBit(kCodecH264)));
+	}
+	{
+		Start a;
+		a.codec = kCodecAv1;
+		a.codecMask = CodecBit(kCodecAv1) | CodecBit(kCodecHevc) | CodecBit(kCodecH264);
+		auto ab = EncodeStart(a);
+		Start ao;
+		CHECK(DecodeStart(ab.data(), ab.size(), ao) && ao.codec == kCodecAv1 && ao.codecMask == a.codecMask);
+		CHECK((CodecCandidates(ao) == std::vector<uint8_t>{ kCodecAv1, kCodecHevc, kCodecH264 }));
+		a.codec = kCodecHevc;
+		a.codecMask = CodecBit(kCodecHevc);
+		CHECK((CodecCandidates(a) == std::vector<uint8_t>{ kCodecHevc, kCodecH264 }));
+		a.codec = kCodecH264;
+		a.codecMask = 0xFF;
+		CHECK((CodecCandidates(a) == std::vector<uint8_t>{ kCodecH264 }));
+		a.codec = 9; // unknown: best of the mask
+		a.codecMask = CodecBit(kCodecHevc);
+		CHECK((CodecCandidates(a) == std::vector<uint8_t>{ kCodecHevc, kCodecH264 }));
+		CHECK(std::string(CodecName(kCodecAv1)) == "AV1");
+	}
 	s.maxFps = 0;
 	b = EncodeStart(s);
 	CHECK(!DecodeStart(b.data(), b.size(), so));

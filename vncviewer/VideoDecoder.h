@@ -7,7 +7,7 @@
 // SPDX-FileCopyrightText: Copyright (C) 2002-2025 UltraVNC Team Members. All Rights Reserved.
 //
 
-// Video mode, viewer side decoder: H.264 / HEVC through the Media
+// Video mode, viewer side decoder: H.264 / HEVC / AV1 through the Media
 // Foundation decoder that ships with Windows (synchronous MFT). When the
 // decoder accepts a D3D11 device it decodes on the GPU (any vendor);
 // otherwise, or if that fails, it decodes in software.
@@ -46,7 +46,7 @@ public:
 	VideoDecoder(const VideoDecoder&) = delete;
 	VideoDecoder& operator=(const VideoDecoder&) = delete;
 
-	// codec: video::kCodecH264 or video::kCodecHevc. With allowHardware the
+	// codec: video::kCodecH264, kCodecHevc or kCodecAv1. With allowHardware the
 	// GPU is used if the decoder supports it.
 	bool Open(uint8_t codec, int width, int height, int fps, bool allowHardware, std::string& error);
 	void Close();

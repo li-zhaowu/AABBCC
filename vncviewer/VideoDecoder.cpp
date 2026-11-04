@@ -46,6 +46,48 @@ std::string Hr(const char* what, HRESULT hr)
 	return buf;
 }
 
+// MFVideoFormat_AV1 ('AV01'); older SDK headers do not have it.
+const GUID kSubtypeAv1 = { 0x31305641, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 } };
+
+GUID SubtypeOf(uint8_t codec)
+{
+	if (codec == video::kCodecAv1)
+		return kSubtypeAv1;
+	return codec == video::kCodecHevc ? MFVideoFormat_HEVC : MFVideoFormat_H264;
+}
+
+// D3D11 decoder profiles (d3d11.h names them only in newer SDKs).
+const GUID kProfileH264 = { 0x1b81be68, 0xa0c7, 0x11d3, { 0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5 } }; // H264_VLD_NOFGT
+const GUID kProfileHevc = { 0x5b11d51b, 0x2f4c, 0x4452, { 0xbc, 0xc3, 0x09, 0xf2, 0xa1, 0x16, 0x0c, 0xc0 } }; // HEVC_VLD_MAIN
+const GUID kProfileAv1 = { 0xb8be4ccb, 0xcf53, 0x46ba, { 0x8d, 0x59, 0xd6, 0xb8, 0xa6, 0xda, 0x5d, 0x2a } };  // AV1_VLD_PROFILE0
+
+// Does the GPU decode this codec itself? Decoder MFTs that are "D3D11
+// aware" (the AV1 and HEVC extensions) fall back to the CPU silently when
+// it does not, so asking them is not enough.
+bool GpuHasDecoderProfile(uint8_t codec)
+{
+	const GUID wanted = codec == video::kCodecAv1 ? kProfileAv1 : codec == video::kCodecHevc ? kProfileHevc : kProfileH264;
+	ID3D11Device* device = nullptr;
+	if (FAILED(D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, NULL, 0,
+		    D3D11_SDK_VERSION, &device, NULL, NULL)))
+		return false;
+	bool found = false;
+	ID3D11VideoDevice* video = nullptr;
+	if (SUCCEEDED(device->QueryInterface(__uuidof(ID3D11VideoDevice), reinterpret_cast<void**>(&video)))) {
+		const UINT n = video->GetVideoDecoderProfileCount();
+		for (UINT i = 0; i < n && !found; ++i) {
+			GUID profile;
+			if (SUCCEEDED(video->GetVideoDecoderProfile(i, &profile)) && IsEqualGUID(profile, wanted)) {
+				BOOL nv12 = FALSE;
+				found = SUCCEEDED(video->CheckVideoDecoderFormat(&profile, DXGI_FORMAT_NV12, &nv12)) && nv12;
+			}
+		}
+		video->Release();
+	}
+	device->Release();
+	return found;
+}
+
 bool StartMediaFoundation()
 {
 	static std::once_flag once;
@@ -100,7 +142,7 @@ bool VideoDecoder::Open(uint8_t codec, int width, int height, int fps, bool allo
 	m_height = height;
 
 	// A synchronous (software) decoder: simple to drive and always present.
-	const GUID subtype = codec == video::kCodecHevc ? MFVideoFormat_HEVC : MFVideoFormat_H264;
+	const GUID subtype = SubtypeOf(codec);
 	MFT_REGISTER_TYPE_INFO in = { MFMediaType_Video, subtype };
 	IMFActivate** activates = nullptr;
 	UINT32 count = 0;
@@ -108,7 +150,9 @@ bool VideoDecoder::Open(uint8_t codec, int width, int height, int fps, bool allo
 		&in, NULL, &activates, &count);
 	if (FAILED(hr) || count == 0) {
 		CoTaskMemFree(activates);
-		error = codec == video::kCodecHevc
+		error = codec == video::kCodecAv1
+			? "no AV1 decoder installed (install \"AV1 Video Extension\" from the Microsoft Store)"
+			: codec == video::kCodecHevc
 			? "no HEVC decoder installed (install \"HEVC Video Extensions\" from the Microsoft Store)"
 			: "no H.264 decoder found";
 		return false;
@@ -254,7 +298,7 @@ bool VideoDecoder::HardwareAvailable(uint8_t codec)
 	std::thread probe([&] {
 		VideoDecoder d;
 		std::string error;
-		hw = d.Open(codec, 1920, 1080, 60, true, error) && d.IsHardware();
+		hw = GpuHasDecoderProfile(codec) && d.Open(codec, 1920, 1080, 60, true, error) && d.IsHardware();
 	});
 	probe.join();
 	cache[codec] = hw;
