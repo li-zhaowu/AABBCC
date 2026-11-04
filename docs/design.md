@@ -299,7 +299,7 @@ WGC 窗口捕获 (第 3 阶段) ───┘                              │
 | `vncviewer/ClientConnectionFiles.cpp` | 打开窗口、文件浏览模式的流程 |
 
 文件浏览模式的流程：
-1. 正常连接、验证密码，但主窗口一直隐藏，也不请求画面（`Internal_SendFramebufferUpdateRequest` 里直接返回）。
+1. 正常连接、验证密码，但主窗口一直隐藏（主窗口的 `WM_WINDOWPOSCHANGING` 里去掉 `SWP_SHOWWINDOW`，所以还原、全屏、工具栏等任何途径都显示不出来），不请求画面（`Internal_SendFramebufferUpdateRequest` 里直接返回），也不发送任何键盘鼠标事件（`SendKeyEvent` / `SendPointerEvent` 里直接返回）。文件窗口打开时放到最前面。
 2. 扩展通道协商完成、有 channel 5 → 打开新窗口。
 3. 5 秒内没有扩展通道（原版服务端）→ 服务端支持原版文件传输就打开原版窗口，否则提示不支持并断开。
 4. 有扩展通道但没有 channel 5（服务端不允许文件传输）→ 提示原因并断开。

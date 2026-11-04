@@ -4375,7 +4375,7 @@ void ClientConnection::SizeWindow(bool noPosChange, bool noSizeChange)
         }
 	}
 
-    if (wcslen(m_opts->m_ClassName) == 0)
+    if (wcslen(m_opts->m_ClassName) == 0 && !m_opts->m_fileMode)
 		SetForegroundWindow(m_hwndMain);
 
 	if (m_opts->m_ShowToolbar)
@@ -5310,6 +5310,9 @@ void ClientConnection::SendWheelEvent(bool precise, unsigned axis, int delta)
 inline void
 ClientConnection::SendPointerEvent(int x, int y, int buttonMask)
 {
+	// File-only mode: the remote desktop is not ours to control.
+	if (m_opts->m_fileMode)
+		return;
 	if (m_pFileTransfer->m_fFileTransferRunning && ( m_pFileTransfer->m_fVisible || m_pFileTransfer->UsingOldProtocol())) return;
 	if (m_pTextChat->m_fTextChatRunning && m_pTextChat->m_fVisible) return;
 
@@ -5450,6 +5453,8 @@ inline void ClientConnection::ProcessKeyEvent(int virtKey, DWORD keyData)
 inline void
 ClientConnection::SendKeyEvent(CARD32 key, bool down)
 {
+	if (m_opts->m_fileMode)
+		return;
 	if (m_pFileTransfer->m_fFileTransferRunning && ( m_pFileTransfer->m_fVisible || m_pFileTransfer->UsingOldProtocol())) return;
 	if (m_pTextChat->m_fTextChatRunning && m_pTextChat->m_fVisible) return;
 
@@ -8515,6 +8520,16 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 		 }
 
 	if (_this == NULL) return DefWindowProc(hwnd, iMsg, wParam, lParam);
+
+	// File-only mode: the desktop window never shows and never takes the
+	// keyboard, whatever asks for it (restore, full screen, toolbar...).
+	if (_this->m_opts && _this->m_opts->m_fileMode && hwnd == _this->m_hwndMain) {
+		if (iMsg == WM_WINDOWPOSCHANGING) {
+			auto* pos = reinterpret_cast<WINDOWPOS*>(lParam);
+			pos->flags &= ~SWP_SHOWWINDOW;
+			pos->flags |= SWP_NOACTIVATE;
+		}
+	}
 
 	if (iMsg == VideoModeEndedMessage()) {
 		_this->OnVideoModeEnded(wParam);

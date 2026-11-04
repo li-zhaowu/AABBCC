@@ -117,6 +117,12 @@ void ClientConnection::OpenFileManager()
 			CloseFileModeConnection();
 	};
 	m_fileWindow = FileManagerWindow::Open(o);
+	if (m_fileWindow && m_opts->m_fileMode) {
+		// The file window is the connection: make sure the desktop window
+		// is out of sight and the file window is in front.
+		ShowWindow(m_hwndMain, SW_HIDE);
+		m_fileWindow->Activate();
+	}
 	if (!m_fileWindow) {
 		MessageBoxW(m_hwndMain, L"The file transfer window could not be opened.", L"UltraVNC Viewer",
 			MB_OK | MB_ICONERROR);
