@@ -111,6 +111,27 @@
     <ClCompile Include="AudioPlayer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\common\FileManProto.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\FileManServer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\FileManClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\FileTransferQueue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClientConnectionFiles.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FileManagerWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FileManagerDragDrop.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="VideoDecoder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -273,6 +294,24 @@
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="AudioPlayer.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\FileManProto.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\FileManServer.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\FileManClient.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\FileTransferQueue.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="FileManagerWindow.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="FileManagerDragDrop.h">
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="VideoDecoder.h">

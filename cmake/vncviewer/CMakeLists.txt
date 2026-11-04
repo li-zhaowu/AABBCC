@@ -30,6 +30,10 @@ set(${PROJECT_NAME}_SOURCES
     ../common/WindowProto.cpp
     ../common/AudioProto.cpp
     ../common/AacCodec.cpp
+    ../common/FileManProto.cpp
+    ../common/FileManServer.cpp
+    ../common/FileManClient.cpp
+    ../common/FileTransferQueue.cpp
     ../common/Hyperlinks.cpp
     ../common/UltraVncZ.cpp
     ../common/mnemonic.c
@@ -51,6 +55,9 @@ set(${PROJECT_NAME}_SOURCES
     VideoDecoder.cpp
     ClientConnectionAudio.cpp
     AudioPlayer.cpp
+    ClientConnectionFiles.cpp
+    FileManagerWindow.cpp
+    FileManagerDragDrop.cpp
     ClientConnectionCoRRE.cpp
     ClientConnectionCopyRect.cpp
     ClientConnectionCursor.cpp
@@ -105,7 +112,7 @@ target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/../vncviewer/res/vnc
 set_source_files_properties(${CMAKE_SOURCE_DIR}/../vncviewer/res/vncviewer.rc LANGUAGE RC)
 target_compile_definitions(${PROJECT_NAME} PRIVATE NDEBUG WIN32 _WINDOWS __NT__ _WINSTATIC __WIN32__ _VIEWER _XZ _VCPKG NOMINMAX)
 target_link_libraries(${PROJECT_NAME}
-    PRIVATE yuv mfplat mfuuid d3d11
+    PRIVATE yuv mfplat mfuuid d3d11 shell32 ole32 uuid
     PRIVATE JPEG::JPEG
     PRIVATE $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
     PRIVATE ZLIB::ZLIB

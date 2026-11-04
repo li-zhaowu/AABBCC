@@ -71,6 +71,7 @@ enum ExtChannelId : uint8_t {
 	kChWindow   = 2,
 	kChAudio    = 3,
 	kChVideo    = 4,
+	kChFiles    = 5, // file manager (file transfer window, file-only mode)
 	kChannelCount
 };
 

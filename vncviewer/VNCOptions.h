@@ -63,6 +63,9 @@ public:
 
 	// default connection options - can be set through Dialog
 	bool	m_ViewOnly;
+	// File transfer only: no remote screen, just the file transfer window
+	// (connect dialog option, /filemode). Not saved in profiles.
+	bool	m_fileMode;
 	bool	m_NoStatus;
 	bool	m_NoHotKeys;
 	bool	m_FullScreen;

@@ -585,6 +585,7 @@ void SessionDialog::InitDlgProc(bool loadhost, bool initMruNeeded)
 		SendMessage(GetDlgItem(hwnd, IDC_RADIODIRECT), BM_SETCHECK, true, 0);
 		ModeSwitch(hwnd, IDC_RADIODIRECT);
 	}
+	CheckDlgButton(hwnd, IDC_FILEMODE_CHECK, m_pOpt->m_fileMode ? BST_CHECKED : BST_UNCHECKED);
 
 	HFONT font = CreateFont(
 		24,                        // nHeight
@@ -625,6 +626,9 @@ void SessionDialog::InitMRU(HWND hwnd)
 bool SessionDialog::connect(HWND hwnd)
 {
 	SettingsFromUI();
+	// File transfer only (not part of the saved options).
+	if (GetDlgItem(hwnd, IDC_FILEMODE_CHECK))
+		m_pOpt->m_fileMode = IsDlgButtonChecked(hwnd, IDC_FILEMODE_CHECK) == BST_CHECKED;
 	for (int i = rfbEncodingRaw; i <= LASTENCODING; i++) {
 		m_pOpt->m_UseEnc[i] = UseEnc[i];
 	}

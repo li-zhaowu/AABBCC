@@ -13,6 +13,7 @@
 #include "ClientConnectionExt.h"
 #include "Exception.h"
 #include "common/FileClipboard.h"
+#include "common/FileManClient.h"
 
 using namespace extmsg;
 
@@ -41,6 +42,17 @@ ViewerExtChannel::ViewerExtChannel(ClientConnection* cc)
 	SetHandler(kChAudio, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
 		m_cc->OnAudioMessage(subtype, payload);
 	});
+	// File manager: always offered; the server decides (its File Transfer
+	// permission).
+	fileman::ClientCallbacks fc;
+	fc.send = [this](ExtPriority prio, uint8_t subtype, const std::vector<uint8_t>& payload) {
+		return Send(prio, kChFiles, subtype, payload);
+	};
+	fc.log = [this](int level, const std::string& msg) { Log(level, msg); };
+	m_files.reset(new fileman::FileManClient(fc));
+	SetHandler(kChFiles, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
+		m_files->OnMessage(subtype, payload);
+	});
 }
 
 ViewerExtChannel::~ViewerExtChannel()
@@ -52,7 +64,7 @@ void ViewerExtChannel::ResetConnection(bool allowFileClipboard)
 {
 	Disconnect();
 
-	uint32_t mask = ChannelBit(kChVideo) | ChannelBit(kChWindow) | ChannelBit(kChAudio);
+	uint32_t mask = ChannelBit(kChVideo) | ChannelBit(kChWindow) | ChannelBit(kChAudio) | ChannelBit(kChFiles);
 	if (allowFileClipboard) {
 		if (!m_fileClip) {
 			fileclip::Callbacks cb;
@@ -79,12 +91,17 @@ void ViewerExtChannel::Disconnect()
 {
 	if (m_fileClip)
 		m_fileClip->OnDisconnected();
+	const bool hadFiles = m_files->Connected();
+	m_files->OnDisconnected();
 	Reset();
+	if (hadFiles)
+		m_cc->OnFileChannel(false);
 }
 
 void ViewerExtChannel::Shutdown()
 {
-	// The engine sends through this channel; stop it first.
+	// The engines send through this channel; stop them first.
+	m_files->OnDisconnected();
 	if (m_fileClip) {
 		m_fileClip->OnDisconnected();
 		m_fileClip->Stop();
@@ -150,6 +167,9 @@ void ViewerExtChannel::OnNegotiated(uint32_t mask)
 	vnclog.Print(1, _T("Extension channel negotiated with server, channels 0x%x\n"), mask);
 	if (m_fileClip && (mask & ChannelBit(kChFileClip)))
 		m_fileClip->OnConnected();
+	if (mask & ChannelBit(kChFiles))
+		m_files->OnConnected();
+	m_cc->OnFileChannel((mask & ChannelBit(kChFiles)) != 0);
 }
 
 void ViewerExtChannel::Log(int level, const std::string& msg)

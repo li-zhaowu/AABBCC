@@ -299,6 +299,7 @@
 #define IDC_DEFAULTBOX                  2030
 #define IDC_EXPAND                      2031
 #define IDC_SHOWOPTIONS                 2032
+#define IDC_FILEMODE_CHECK              2084
 #define IDC_TAB                         2033
 #define IDC_BUTTON3                     2034
 #define IDC_BUTTON4                     2035
@@ -717,7 +718,7 @@
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        242
 #define _APS_NEXT_COMMAND_VALUE         50026
-#define _APS_NEXT_CONTROL_VALUE         2084
+#define _APS_NEXT_CONTROL_VALUE         2085
 #define _APS_NEXT_SYMED_VALUE           154
 #endif
 #endif

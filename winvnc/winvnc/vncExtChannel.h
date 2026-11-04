@@ -18,6 +18,7 @@
 #include <memory>
 
 namespace fileclip { class FileClipboard; }
+namespace fileman { class FileManServer; }
 class vncVideoStreamer;
 class vncWindowSession;
 class vncAudioStreamer;
@@ -74,6 +75,8 @@ private:
 	std::unique_ptr<vncWindowSession> m_window;
 	// Remote audio (channel kChAudio).
 	std::unique_ptr<vncAudioStreamer> m_audio;
+	// File manager (channel kChFiles); null if file transfer is not allowed.
+	std::unique_ptr<fileman::FileManServer> m_files;
 };
 
 // When the server runs as a service (LocalSystem in the user's session), the

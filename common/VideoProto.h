@@ -67,7 +67,7 @@ enum StatusCode : uint32_t {
 	kStatusBadRequest   = 6,
 };
 
-// Defaults agreed in the design (section 7).
+// Defaults agreed in the design (section 8).
 constexpr uint16_t kDefaultFps         = 60;
 constexpr uint32_t kDefaultBitrateKbps = 20000;
 

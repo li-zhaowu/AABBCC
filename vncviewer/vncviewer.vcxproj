@@ -1768,6 +1768,13 @@
     <ClCompile Include="..\common\AacCodec.cpp" />
     <ClCompile Include="ClientConnectionAudio.cpp" />
     <ClCompile Include="AudioPlayer.cpp" />
+    <ClCompile Include="..\common\FileManProto.cpp" />
+    <ClCompile Include="..\common\FileManServer.cpp" />
+    <ClCompile Include="..\common\FileManClient.cpp" />
+    <ClCompile Include="..\common\FileTransferQueue.cpp" />
+    <ClCompile Include="ClientConnectionFiles.cpp" />
+    <ClCompile Include="FileManagerWindow.cpp" />
+    <ClCompile Include="FileManagerDragDrop.cpp" />
     <ClCompile Include="ClientConnectionExt.cpp" />
     <ClCompile Include="Daemon.cpp">
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -2409,6 +2416,12 @@
     <ClInclude Include="..\common\AudioProto.h" />
     <ClInclude Include="..\common\AacCodec.h" />
     <ClInclude Include="AudioPlayer.h" />
+    <ClInclude Include="..\common\FileManProto.h" />
+    <ClInclude Include="..\common\FileManServer.h" />
+    <ClInclude Include="..\common\FileManClient.h" />
+    <ClInclude Include="..\common\FileTransferQueue.h" />
+    <ClInclude Include="FileManagerWindow.h" />
+    <ClInclude Include="FileManagerDragDrop.h" />
     <ClInclude Include="ClientConnectionExt.h" />
     <ClInclude Include="Daemon.h" />
     <ClInclude Include="..\rfb\dh.h" />

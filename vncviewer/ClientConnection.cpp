@@ -70,6 +70,7 @@ using namespace helper;
 #include "rfb/HighResolutionWheel.h"
 #include "ClientConnectionExt.h"
 #include "AudioPlayer.h"
+#include "FileManagerWindow.h"
 extern HINSTANCE m_hInstResDLL;
 
 // [v1.0.2-jp1 fix]
@@ -825,7 +826,7 @@ void ClientConnection::DoConnection(bool reconnect)
 	// Fresh extension channel state for this connection; it opens when the
 	// server answers rfbEncodingExtCaps with its Caps. Files are copied and
 	// pasted only if the clipboard is enabled and we may send input.
-	m_ext->ResetConnection(!m_opts->m_DisableClipboard && !m_opts->m_ViewOnly);
+	m_ext->ResetConnection(!m_opts->m_DisableClipboard && !m_opts->m_ViewOnly && !m_opts->m_fileMode);
 	ResetVideoState();
 	ResetWindowState();
 	ResetAudioState();
@@ -4093,7 +4094,8 @@ void ClientConnection::SizeWindow(bool noPosChange, bool noSizeChange)
 
 	bool pos_set = false;
 	bool size_set = false;
-	UINT showFlag = (wcslen(m_opts->m_ClassName) > 0) ? 0 : SWP_SHOWWINDOW;
+	// File-only mode: the desktop window stays hidden.
+	UINT showFlag = (wcslen(m_opts->m_ClassName) > 0 || m_opts->m_fileMode) ? 0 : SWP_SHOWWINDOW;
 	// Find how large the desktop work area is
 	RECT workrect;
 	tempdisplayclass tdc;
@@ -4838,6 +4840,12 @@ ClientConnection::CloseWindows()
 ClientConnection::~ClientConnection()
 {
 	// The sender thread uses the socket and crit; stop it first.
+	// The file transfer window uses the extension channel; close it first.
+	if (m_fileWindow) {
+		m_fileWindowClosing = true;
+		m_fileWindow->Destroy();
+		m_fileWindow = nullptr;
+	}
 	if (m_ext)
 		m_ext->Shutdown();
 	DestroyVideoCursors();
@@ -5779,11 +5787,18 @@ void* ClientConnection::run_undetached(void* arg) {
 	SendFullFramebufferUpdateRequest(false);
 
 	SizeWindow(false);
-	RealiseFullScreenMode();
-	if (!InFullScreenMode()) SizeWindow(false);
+	if (!m_opts->m_fileMode) {
+		RealiseFullScreenMode();
+		if (!InFullScreenMode()) SizeWindow(false);
+	}
 
 	m_running = true;
 	UpdateWindow(m_hwndcn);
+
+	// File-only mode: open the file transfer window (once the extension
+	// channel is up, or fall back).
+	if (m_opts->m_fileMode)
+		PostMessage(m_hwndMain, FileChannelMessage(), 2, 0);
 
 	// Auto-trigger file transfer for headless -uploadlocal/-uploadremote mode
 	if (m_opts->m_szUploadLocal[0] != L'\0' && m_opts->m_szUploadRemote[0] != L'\0' && m_fServerKnowsFileTransfer)
@@ -6063,6 +6078,9 @@ void* ClientConnection::run_undetached(void* arg) {
 
 void ClientConnection::Internal_SendFramebufferUpdateRequest(int x, int y, int w, int h, bool incremental)
 {
+	// File-only mode: no screen at all.
+	if (m_opts->m_fileMode)
+		return;
 	// Video mode: the server streams the screen; asking for updates would
 	// only send the same pixels twice. Full requests (end of video mode,
 	// format changes) still go out.
@@ -8506,6 +8524,10 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 		_this->OnWindowModeEvent(wParam, lParam);
 		return 0;
 	}
+	if (iMsg == FileChannelMessage()) {
+		_this->OnFileChannelEvent(wParam);
+		return 0;
+	}
 	if (iMsg == AudioEventMessage()) {
 		_this->OnAudioEvent(wParam);
 		return 0;
@@ -8886,6 +8908,12 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 
 						// Modif sf@2002 - File Transfer
 					case ID_FILETRANSFER:
+						// The new file transfer window, if the server offers it.
+						if (_this->m_ext->ChannelUsable(extmsg::kChFiles) &&
+						    !(_this->m_opts->m_szUploadLocal[0] != L'\0' && _this->m_opts->m_szUploadRemote[0] != L'\0')) {
+							_this->OpenFileManager();
+							return 0;
+						}
 						// Check if the Server knows File Transfer
 						if (!_this->m_fServerKnowsFileTransfer)
 						{
@@ -8911,6 +8939,11 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 						_this->m_pFileTransfer->m_fFileCommandPending = false;
 						_this->m_pFileTransfer->DoDialog();
 						_this->m_pFileTransfer->m_fFileTransferRunning = false;
+						// File-only mode with an older server: the window was the connection.
+						if (_this->m_opts->m_fileMode) {
+							_this->CloseFileModeConnection();
+							return 0;
+						}
 						// Refresh Screen
 						// _this->SendFullFramebufferUpdateRequest();
 						//adzm 2010-09

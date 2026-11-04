@@ -133,6 +133,7 @@ VNCOptions::VNCOptions()
 	m_UseEnc[rfbEncodingZSTDYWRLE] = true;
 
 	m_ViewOnly = false;
+	m_fileMode = false;
 	m_FullScreen = false;
 	m_SavePos = false;
 	m_SaveSize = false;
@@ -327,6 +328,7 @@ VNCOptions& VNCOptions::operator=(VNCOptions& s)
 		m_UseEnc[i] = s.m_UseEnc[i];
 
 	m_ViewOnly = s.m_ViewOnly;
+	m_fileMode = s.m_fileMode;
 	m_NoStatus = s.m_NoStatus;
 	m_FullScreen = s.m_FullScreen;
 	m_SavePos = s.m_SavePos;
@@ -606,6 +608,9 @@ void VNCOptions::SetFromCommandLine(LPTSTR szCmdLine) {
 		}		
 		else if (SwitchMatch(args[j], _T("viewonly"))) {
 			m_ViewOnly = true;
+		}
+		else if (SwitchMatch(args[j], _T("filemode"))) {
+			m_fileMode = true;
 		}
 		else if (SwitchMatch(args[j], _T("nostatus"))) {
 			m_NoStatus = true;
@@ -1396,6 +1401,7 @@ void VNCOptions::ShowUsage(LPTSTR info) {
 			"      [/requireencryption] [/enablecache] [/throttlemouse n] [/socketkeepalivetimeout n]\r\n" //adzm 2010-05-12
 			"      [/gnome] [/hideendofstreamerror]\r\n"
 			"      [/uploadlocal fullfilename /uploadremote path]\r\n"
+			"      [/filemode]  (file transfer only, no remote screen)\r\n"
 			"For full details see documentation."),
 		tmpinf);
 	yesUVNCMessageBox(m_hInstResDLL, NULL, msg, sz_A2, MB_ICONINFORMATION);

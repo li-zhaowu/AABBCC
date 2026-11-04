@@ -32,6 +32,8 @@ set(${PROJECT_NAME}_SOURCES
     ../../common/RateController.cpp
     ../../common/AudioProto.cpp
     ../../common/AacCodec.cpp
+    ../../common/FileManProto.cpp
+    ../../common/FileManServer.cpp
     ../../common/Hyperlinks.cpp
     ../../common/UltraVncZ.cpp
     ../../common/d3des.c
@@ -134,7 +136,7 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE zstd::libzstd
     PRIVATE LibLZMA::LibLZMA
 	PRIVATE unofficial-sodium::sodium
-    PRIVATE d3d11 dxgi winmm dwmapi mfplat mfuuid
+    PRIVATE d3d11 dxgi winmm dwmapi mfplat mfuuid shell32 ole32
     libomnithread
     librdr
     libudtcloud

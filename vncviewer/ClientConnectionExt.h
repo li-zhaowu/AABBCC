@@ -18,6 +18,7 @@
 
 class ClientConnection;
 namespace fileclip { class FileClipboard; }
+namespace fileman { class FileManClient; }
 
 class ViewerExtChannel : public extmsg::ExtChannel {
 public:
@@ -36,6 +37,8 @@ public:
 	void Disconnect();
 	// The viewer window closes: stop everything.
 	void Shutdown();
+	// File manager requests (channel kChFiles); never null.
+	fileman::FileManClient* Files() { return m_files.get(); }
 
 protected:
 	bool WriteFrame(const uint8_t header[extmsg::kHeaderSize],
@@ -47,4 +50,6 @@ private:
 	ClientConnection* m_cc;
 	// File copy and paste (channel kChFileClip); created on first use.
 	std::unique_ptr<fileclip::FileClipboard> m_fileClip;
+	// File manager client (channel kChFiles), used by the file transfer window.
+	std::unique_ptr<fileman::FileManClient> m_files;
 };

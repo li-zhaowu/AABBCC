@@ -108,6 +108,7 @@ class ClientConnection;
 class CDSMPlugin;
 class ViewerExtChannel;
 class AudioPlayer;
+class FileManagerWindow;
 typedef void (ClientConnection:: *tightFilterFunc)(int);
 
 void JpegErrorHeader(j_common_ptr cinfo);
@@ -568,6 +569,17 @@ private:
 	std::atomic<bool> m_videoActive{false};      // a stream is running: no framebuffer updates
 	omni_mutex m_videoMutex;
 	std::string m_videoEndReason;                // guarded by m_videoMutex
+
+	// File transfer window and file-only mode (ClientConnectionFiles.cpp).
+	static UINT FileChannelMessage();
+	void OnFileChannel(bool usable);           // any thread
+	void OnFileChannelEvent(WPARAM event);     // UI thread
+	void OpenFileManager();                    // UI thread
+	void FileModeFallback();
+	void CloseFileModeConnection();
+	FileManagerWindow* m_fileWindow = nullptr; // UI thread
+	bool m_fileModeResolved = false;           // file mode: a window was opened or the user told why not
+	bool m_fileWindowClosing = false;          // the connection is going away
 
 	// Remote audio (ClientConnectionAudio.cpp).
 	static UINT AudioEventMessage();

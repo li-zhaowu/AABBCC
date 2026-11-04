@@ -1423,6 +1423,8 @@ copy "$(OutDir)$(TargetName)$(TargetExt)" c:\uvnc\64\xp</Command>
     <ClCompile Include="..\..\common\RateController.cpp" />
     <ClCompile Include="..\..\common\AudioProto.cpp" />
     <ClCompile Include="..\..\common\AacCodec.cpp" />
+    <ClCompile Include="..\..\common\FileManProto.cpp" />
+    <ClCompile Include="..\..\common\FileManServer.cpp" />
     <ClCompile Include="vncWindowCapture.cpp" />
     <ClCompile Include="vncWindowSession.cpp" />
     <ClCompile Include="vncAudioStreamer.cpp" />
@@ -3261,6 +3263,8 @@ copy "$(OutDir)$(TargetName)$(TargetExt)" c:\uvnc\64\xp</Command>
     <ClInclude Include="..\..\common\RateController.h" />
     <ClInclude Include="..\..\common\AudioProto.h" />
     <ClInclude Include="..\..\common\AacCodec.h" />
+    <ClInclude Include="..\..\common\FileManProto.h" />
+    <ClInclude Include="..\..\common\FileManServer.h" />
     <ClInclude Include="vncWindowCapture.h" />
     <ClInclude Include="vncWindowSession.h" />
     <ClInclude Include="vncAudioStreamer.h" />

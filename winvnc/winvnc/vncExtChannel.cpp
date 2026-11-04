@@ -14,6 +14,7 @@
 #include "SettingsManager.h"
 #include "credentials.h"
 #include "common/FileClipboard.h"
+#include "common/FileManServer.h"
 #include "vncVideoStreamer.h"
 #include "vncWindowSession.h"
 #include "vncAudioStreamer.h"
@@ -251,6 +252,23 @@ void vncServerExtChannel::OpenForClient()
 		}
 	}
 
+	// File manager (file transfer window, file-only connections): same
+	// permission as file copy and paste.
+	if (settings->getEnableFileTransfer() && m_client->m_keyboardenabled && m_client->m_pointerenabled) {
+		fileman::ServerCallbacks fc;
+		fc.send = [this](ExtPriority prio, uint8_t subtype, const std::vector<uint8_t>& payload) {
+			return Send(prio, kChFiles, subtype, payload);
+		};
+		fc.log = [this](int level, const std::string& msg) { Log(level, msg); };
+		fc.acquireUserToken = &AcquireDesktopUserToken;
+		m_files.reset(new fileman::FileManServer(fc));
+		m_files->Start();
+		SetHandler(kChFiles, [this](uint8_t subtype, std::vector<uint8_t>& payload) {
+			m_files->OnMessage(subtype, payload);
+		});
+		mask |= ChannelBit(kChFiles);
+	}
+
 	// Video mode needs NVENC on an NVIDIA GPU; without it the viewer keeps
 	// the classic mode only (its menu entry reports why).
 	std::string why;
@@ -370,6 +388,8 @@ void vncServerExtChannel::StopEngines()
 {
 	if (m_audio)
 		m_audio->Shutdown();
+	if (m_files)
+		m_files->Stop();
 	if (m_window)
 		m_window->Shutdown();
 	if (m_video)
