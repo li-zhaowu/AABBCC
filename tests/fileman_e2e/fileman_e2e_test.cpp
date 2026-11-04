@@ -366,6 +366,34 @@ static void TestTransfers()
 	CHECK(c.MkDirSync(JoinPath(g_base, "after")).status == kErrDisconnected);
 }
 
+// The server may refuse file access (service mode, nobody logged on).
+static void TestRefused()
+{
+	std::unique_ptr<FileManServer> server;
+	std::unique_ptr<FileManClient> client;
+	std::unique_ptr<Pipe> toServer, toClient;
+	ServerCallbacks sc;
+	sc.send = [&](ExtPriority prio, uint8_t st, const std::vector<uint8_t>& p) { return toClient->Send(prio, st, p); };
+	sc.acquireUserToken = [](HANDLE* token) { *token = NULL; return false; };
+	sc.refusedMessage = "nobody is logged on";
+	server.reset(new FileManServer(sc));
+	ClientCallbacks cc;
+	cc.send = [&](ExtPriority prio, uint8_t st, const std::vector<uint8_t>& p) { return toServer->Send(prio, st, p); };
+	client.reset(new FileManClient(cc));
+	toServer.reset(new Pipe([&](uint8_t st, std::vector<uint8_t>& p) { server->OnMessage(st, p); }));
+	toClient.reset(new Pipe([&](uint8_t st, std::vector<uint8_t>& p) { client->OnMessage(st, p); }));
+	server->Start();
+	client->OnConnected();
+	std::vector<Entry> list;
+	const Result r = client->ListSync("C:\\", list);
+	CHECK(r.status == kErrAccess && r.message == "nobody is logged on");
+	std::printf("refused: %s\n", r.Describe().c_str());
+	client->OnDisconnected();
+	server->Stop();
+	toServer.reset();
+	toClient.reset();
+}
+
 static void TestQueue()
 {
 	Rig rig;
@@ -485,6 +513,7 @@ int main()
 	std::printf("test folder: %s\n", g_base.c_str());
 
 	TestBasics();
+	TestRefused();
 	TestTransfers();
 	TestQueue();
 

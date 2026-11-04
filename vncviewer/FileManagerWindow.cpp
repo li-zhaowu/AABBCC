@@ -712,8 +712,17 @@ LRESULT FileManagerWindow::Handle(UINT msg, WPARAM wp, LPARAM lp)
 	case WM_FM_REMOTE_ROOTS: {
 		std::unique_ptr<RootsResult> res(reinterpret_cast<RootsResult*>(lp));
 		Pane& p = m_panes[kRemote];
-		if (!res->result.Ok())
+		if (!res->result.Ok()) {
+			if (res->result.status == kErrDisconnected)
+				return 0;
+			// Say why the remote side stays empty (e.g. nobody logged on).
+			p.error = res->result.Describe();
+			UpdatePaneStatus(p);
+			MessageBoxW(m_hwnd, (L"The remote files cannot be shown.\n\n" + W(p.error)).c_str(),
+				L"UltraVNC File Transfer", MB_OK | MB_ICONWARNING);
 			return 0;
+		}
+		p.error.clear();
 		p.places_.clear();
 		for (const Root& r : res->roots) {
 			Place pl;

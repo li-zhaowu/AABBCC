@@ -60,6 +60,9 @@ file manager: deleted C:\...\old
 | 4 | 服务端关掉 File Transfer 权限后用文件浏览模式连接 | 提示「服务端不允许文件传输」，然后断开 |
 | 5 | 文件浏览模式连**原版** UltraVNC 服务端 | 约 5 秒后打开原版文件传输窗口；关掉后断开 |
 | 6 | 文件浏览模式下拔网线几秒再插上（开着自动重连） | 右边显示 Not connected；重连后回到原来的文件夹 |
+| 6a | 服务方式运行、**没人登录**、「User impersonation (for Service only)」勾选（默认） | 弹出提示：没有用户登录，以及要改哪个设置；右边状态栏显示同样的原因 |
+| 6b | 同上，但取消勾选这个设置（立即生效，在窗口里按 F5 刷新） | 能浏览和传文件；常用文件夹里有「Users」（`C:\Users`）；服务端日志有 `file manager: nobody is logged on, file access as the service` |
+| 6c | 6b 之后有人登录 Windows，在窗口里按 F5 | 下拉框里出现这个用户的桌面 / 文档 / 下载，之后的文件操作以这个用户的身份进行 |
 
 ### 窗口
 | # | 操作 | 预期 |

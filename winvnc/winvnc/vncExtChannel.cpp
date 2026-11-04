@@ -48,13 +48,10 @@ vncServerExtChannel::~vncServerExtChannel()
 	Stop();
 }
 
-// Token of the user logged on to the console, for file access while the
-// server runs as LocalSystem. The engine closes the returned duplicate.
-static bool AcquireDesktopUserToken(HANDLE* token)
+// Token of the user logged on to the console (a private duplicate), or
+// NULL if nobody is logged on.
+static HANDLE DuplicateDesktopUserToken()
 {
-	*token = NULL;
-	if (!settings->RunningFromExternalService())
-		return true; // we already run as the desktop user
 	// No lock-screen check here: IsWSLocked() looks for LogonUI.exe, which
 	// on some systems stays in the session after unlocking and made every
 	// remote-to-local copy fail. A logged-on user's token is what matters.
@@ -63,12 +60,47 @@ static bool AcquireDesktopUserToken(HANDLE* token)
 	static std::mutex tokenMutex;
 	std::lock_guard<std::mutex> lk(tokenMutex);
 	HANDLE shared = DesktopUsersToken::getInstance()->getDesktopUsersToken();
-	if (!shared) {
+	HANDLE token = NULL;
+	if (shared && !DuplicateHandle(GetCurrentProcess(), shared, GetCurrentProcess(), &token, 0, FALSE,
+		    DUPLICATE_SAME_ACCESS))
+		token = NULL;
+	return token;
+}
+
+// File copy and paste: file access as the desktop user while the server
+// runs as LocalSystem. The engine closes the returned duplicate.
+static bool AcquireDesktopUserToken(HANDLE* token)
+{
+	*token = NULL;
+	if (!settings->RunningFromExternalService())
+		return true; // we already run as the desktop user
+	*token = DuplicateDesktopUserToken();
+	if (!*token) {
 		vnclog.Print(LL_INTERR, VNCLOG("file clipboard: no desktop user token\n"));
 		return false;
 	}
-	return DuplicateHandle(GetCurrentProcess(), shared, GetCurrentProcess(), token, 0, FALSE,
-		DUPLICATE_SAME_ACCESS) != FALSE;
+	return true;
+}
+
+// File manager (file transfer window, file-only connections): as the
+// logged-on user. With nobody logged on, it follows the classic file
+// transfer's "User impersonation (for Service only)" setting: on (the
+// default) refuses, off works as the service itself (LocalSystem).
+static bool AcquireFileManagerToken(HANDLE* token)
+{
+	*token = NULL;
+	if (!settings->RunningFromExternalService())
+		return true;
+	*token = DuplicateDesktopUserToken();
+	static std::atomic<int> lastMode{ -1 }; // log changes only
+	const int mode = *token ? 0 : settings->getFTUserImpersonation() ? 1 : 2;
+	if (lastMode.exchange(mode) != mode) {
+		if (mode == 1)
+			vnclog.Print(LL_INTINFO, VNCLOG("file manager: nobody is logged on, file access refused (user impersonation is on)\n"));
+		else if (mode == 2)
+			vnclog.Print(LL_INTINFO, VNCLOG("file manager: nobody is logged on, file access as the service (user impersonation is off)\n"));
+	}
+	return mode != 1;
 }
 
 namespace {
@@ -260,7 +292,9 @@ void vncServerExtChannel::OpenForClient()
 			return Send(prio, kChFiles, subtype, payload);
 		};
 		fc.log = [this](int level, const std::string& msg) { Log(level, msg); };
-		fc.acquireUserToken = &AcquireDesktopUserToken;
+		fc.acquireUserToken = &AcquireFileManagerToken;
+		fc.refusedMessage = "nobody is logged on to the server. To use file transfer before anyone logs on, "
+			"turn off \"User impersonation (for Service only)\" under File Transfer in the server settings.";
 		m_files.reset(new fileman::FileManServer(fc));
 		m_files->Start();
 		SetHandler(kChFiles, [this](uint8_t subtype, std::vector<uint8_t>& payload) {

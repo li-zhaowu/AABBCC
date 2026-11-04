@@ -122,6 +122,26 @@ private:
 	DWORD m_old = 0;
 };
 
+// True when running as LocalSystem without impersonating anybody (a
+// service with nobody logged on).
+bool ActingAsLocalSystem()
+{
+	HANDLE t = NULL;
+	if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &t) &&
+	    !OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &t))
+		return false;
+	union {
+		TOKEN_USER user;
+		BYTE bytes[256];
+	} info;
+	DWORD n = 0;
+	bool system = false;
+	if (GetTokenInformation(t, TokenUser, &info, sizeof(info), &n))
+		system = IsWellKnownSid(info.user.User.Sid, WinLocalSystemSid) != FALSE;
+	CloseHandle(t);
+	return system;
+}
+
 bool IsDots(const wchar_t* name)
 {
 	return wcscmp(name, L".") == 0 || wcscmp(name, L"..") == 0;
@@ -272,7 +292,7 @@ void FileManServer::WorkerMain()
 			uint32_t reqId = 0;
 			if (job.payload.size() >= 4 && job.subtype != kWrite) {
 				reqId = extmsg::GetU32(job.payload.data());
-				Reply(reqId, kErrAccess, {}, "no user is logged on");
+				Reply(reqId, kErrAccess, {}, m_cb.refusedMessage);
 			}
 			continue;
 		}
@@ -423,6 +443,22 @@ void FileManServer::DoRoots(uint32_t reqId)
 			}
 		}
 		roots.push_back(std::move(root));
+	}
+	// Nobody logged on (service identity): the system account's own folders
+	// are of no use; offer the users' folders instead.
+	if (ActingAsLocalSystem()) {
+		PWSTR users = nullptr;
+		if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_UserProfiles, 0, NULL, &users)) && users) {
+			Root root;
+			root.path = WideToUtf8(users);
+			root.label = "Users";
+			root.type = kRootFolder;
+			if (IsAcceptablePath(root.path))
+				roots.push_back(std::move(root));
+		}
+		CoTaskMemFree(users);
+		Reply(reqId, kOk, EncodeRoots(roots));
+		return;
 	}
 	// The (impersonated) user's own folders.
 	HANDLE token = NULL;

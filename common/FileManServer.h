@@ -47,6 +47,8 @@ struct ServerCallbacks {
 	// Optional, as in fileclip::Callbacks: return false to refuse file
 	// access; set *token to a token to impersonate (closed by the engine).
 	std::function<bool(HANDLE* token)> acquireUserToken;
+	// Told to the viewer when acquireUserToken refuses.
+	std::string refusedMessage = "no user is logged on";
 };
 
 class FileManServer {
