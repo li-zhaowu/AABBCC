@@ -287,6 +287,8 @@ WGC 窗口捕获 (第 3 阶段) ───┘                              │
   - 勾选（默认）：拒绝，查看器提示原因和要改哪个设置。
   - 不勾选：以服务自身（LocalSystem）的身份访问文件。这时远程一侧的常用文件夹只有 `C:\Users`。有用户登录后，仍然以那个用户的身份操作。
   - 安全上的取舍：不勾选时，知道 VNC 密码的人不用登录 Windows 就能读写整台机器的文件。
+  - 注意：服务方式下的配置文件是 `C:\ProgramData\UltraVNC\ultravnc.ini`（安装目录里有 `ultravnc.portable` 时才用安装目录里的那份）。安装目录里的 ini 只在第一次被复制过去，之后改它不起作用。直接改 ini 后要重启 `uvnc_service`。
+- **找登录用户的顺序**（`vncExtChannel.cpp` 的 `DuplicateDesktopUserToken`，复制粘贴文件也用它）：原来的 `DesktopUsersToken`（控制台会话的 explorer.exe）→ 服务端所在会话和控制台会话的 `WTSQueryUserToken` → 服务端所在会话里 explorer.exe 的令牌 → 其他「活动」状态、有用户的会话（远程桌面登录、切换用户的情况：VNC 看到的是控制台的登录界面，用户却登录在远程桌面会话里）。结果缓存 2 秒；失败时日志只记一次，列出每一步的错误码和所有会话的状态。
 - 服务端每个连接一个工作线程，按顺序处理请求；最多同时打开 16 个文件。
 
 ### 6.3 查看器

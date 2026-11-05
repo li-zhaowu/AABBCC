@@ -63,6 +63,7 @@ file manager: deleted C:\...\old
 | 6a | 服务方式运行、**没人登录**、「User impersonation (for Service only)」勾选（默认） | 弹出提示：没有用户登录，以及要改哪个设置；右边状态栏显示同样的原因 |
 | 6b | 同上，但取消勾选这个设置（立即生效，在窗口里按 F5 刷新） | 能浏览和传文件；常用文件夹里有「Users」（`C:\Users`）；服务端日志有 `file manager: nobody is logged on, file access as the service` |
 | 6c | 6b 之后有人登录 Windows，在窗口里按 F5 | 下拉框里出现这个用户的桌面 / 文档 / 下载，之后的文件操作以这个用户的身份进行 |
+| 6d | 通过远程桌面登录远程机器（VNC 看到的是登录界面），用文件浏览模式连接 | 以远程桌面里那个用户的身份访问文件（下拉框里有他的桌面 / 文档 / 下载）；服务端日志有 `desktop user token: using the user of session N` |
 
 ### 窗口
 | # | 操作 | 预期 |
