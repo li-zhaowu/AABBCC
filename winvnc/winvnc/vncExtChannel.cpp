@@ -21,6 +21,7 @@
 
 #include <mutex>
 #include <shellapi.h>
+#include <tlhelp32.h>
 
 using namespace extmsg;
 
@@ -48,20 +49,127 @@ vncServerExtChannel::~vncServerExtChannel()
 	Stop();
 }
 
-// Token of the user logged on to the console (a private duplicate), or
-// NULL if nobody is logged on.
+namespace {
+
+typedef BOOL(WINAPI* PFN_WTSQueryUserToken)(ULONG, PHANDLE);
+
+// The user token of a Windows session (needs LocalSystem), or NULL.
+HANDLE SessionUserToken(DWORD session, DWORD* error)
+{
+	static PFN_WTSQueryUserToken query = [] {
+		HMODULE dll = LoadLibraryExW(L"wtsapi32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+		return dll ? reinterpret_cast<PFN_WTSQueryUserToken>(reinterpret_cast<void*>(
+			GetProcAddress(dll, "WTSQueryUserToken"))) : nullptr;
+	}();
+	HANDLE token = NULL;
+	if (!query) {
+		*error = ERROR_PROC_NOT_FOUND;
+		return NULL;
+	}
+	if (session == 0xFFFFFFFF || !query(session, &token)) {
+		*error = session == 0xFFFFFFFF ? ERROR_NO_SUCH_LOGON_SESSION : GetLastError();
+		return NULL;
+	}
+	return token;
+}
+
+// The token of explorer.exe running in a session, or NULL.
+HANDLE ExplorerToken(DWORD session, DWORD* error)
+{
+	HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snap == INVALID_HANDLE_VALUE) {
+		*error = GetLastError();
+		return NULL;
+	}
+	PROCESSENTRY32W pe = {};
+	pe.dwSize = sizeof(pe);
+	HANDLE token = NULL;
+	*error = ERROR_NOT_FOUND;
+	for (BOOL ok = Process32FirstW(snap, &pe); ok && !token; ok = Process32NextW(snap, &pe)) {
+		DWORD s = 0;
+		if (_wcsicmp(pe.szExeFile, L"explorer.exe") != 0 || !ProcessIdToSessionId(pe.th32ProcessID, &s) || s != session)
+			continue;
+		HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
+		if (!process) {
+			*error = GetLastError();
+			continue;
+		}
+		if (!OpenProcessToken(process, TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_IMPERSONATE, &token)) {
+			*error = GetLastError();
+			token = NULL;
+		}
+		CloseHandle(process);
+	}
+	CloseHandle(snap);
+	return token;
+}
+
+} // namespace
+
+// Token of the user logged on to the desktop the server shows (a private
+// duplicate the caller closes), or NULL if nobody is logged on. Several
+// ways are tried, since each fails in some setups; the result is cached
+// for a moment (uploads ask for every block of data).
 static HANDLE DuplicateDesktopUserToken()
 {
-	// No lock-screen check here: IsWSLocked() looks for LogonUI.exe, which
-	// on some systems stays in the session after unlocking and made every
-	// remote-to-local copy fail. A logged-on user's token is what matters.
-	// DesktopUsersToken is not thread safe; serialise our calls and keep a
-	// private duplicate so that a later refresh cannot close it under us.
 	static std::mutex tokenMutex;
+	static HANDLE cached = NULL;
+	static ULONGLONG cachedAt = 0;
+	static std::string lastFailure;
 	std::lock_guard<std::mutex> lk(tokenMutex);
-	HANDLE shared = DesktopUsersToken::getInstance()->getDesktopUsersToken();
+
+	const ULONGLONG now = GetTickCount64();
+	if (!cached || now - cachedAt > 2000) {
+		if (cached) {
+			CloseHandle(cached);
+			cached = NULL;
+		}
+		std::string failures;
+		// 1. The classic way (explorer.exe of the console session). Not
+		// thread safe, hence the mutex; keep a private duplicate so that a
+		// later refresh cannot close it under us.
+		// No lock-screen check: IsWSLocked() looks for LogonUI.exe, which
+		// on some systems stays in the session after unlocking.
+		HANDLE shared = DesktopUsersToken::getInstance()->getDesktopUsersToken();
+		if (shared && !DuplicateHandle(GetCurrentProcess(), shared, GetCurrentProcess(), &cached, 0, FALSE,
+			    DUPLICATE_SAME_ACCESS))
+			cached = NULL;
+		if (!cached)
+			failures += shared ? "DesktopUsersToken: duplicate failed; " : "DesktopUsersToken: none; ";
+		// 2. The session we run in, then the active console session.
+		DWORD ownSession = 0xFFFFFFFF;
+		ProcessIdToSessionId(GetCurrentProcessId(), &ownSession);
+		const DWORD consoleSession = WTSGetActiveConsoleSessionId();
+		for (DWORD session : { ownSession, consoleSession }) {
+			if (cached)
+				break;
+			DWORD error = 0;
+			cached = SessionUserToken(session, &error);
+			if (!cached)
+				failures += "WTSQueryUserToken(session " + std::to_string(session) + "): error " +
+					std::to_string(error) + "; ";
+		}
+		// 3. explorer.exe in our own session.
+		if (!cached) {
+			DWORD error = 0;
+			cached = ExplorerToken(ownSession, &error);
+			if (!cached)
+				failures += "explorer token (session " + std::to_string(ownSession) + "): error " +
+					std::to_string(error);
+		}
+		cachedAt = now;
+		// Log changes only (this runs for every file request).
+		const std::string state = cached ? std::string() : failures;
+		if (state != lastFailure) {
+			if (cached)
+				vnclog.Print(LL_INTINFO, VNCLOG("desktop user token found\n"));
+			else
+				vnclog.Print(LL_INTERR, VNCLOG("no desktop user token: %s\n"), failures.c_str());
+			lastFailure = state;
+		}
+	}
 	HANDLE token = NULL;
-	if (shared && !DuplicateHandle(GetCurrentProcess(), shared, GetCurrentProcess(), &token, 0, FALSE,
+	if (cached && !DuplicateHandle(GetCurrentProcess(), cached, GetCurrentProcess(), &token, 0, FALSE,
 		    DUPLICATE_SAME_ACCESS))
 		token = NULL;
 	return token;
