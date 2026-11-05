@@ -22,6 +22,7 @@
 #include <mutex>
 #include <shellapi.h>
 #include <tlhelp32.h>
+#include <wtsapi32.h>
 
 using namespace extmsg;
 
@@ -104,6 +105,46 @@ HANDLE ExplorerToken(DWORD session, DWORD* error)
 	return token;
 }
 
+// All sessions: "id state user" for the log, and the first active session
+// that has a user (other than `skip`), or 0xFFFFFFFF.
+DWORD FindActiveUserSession(DWORD skip, std::string& list)
+{
+	typedef BOOL(WINAPI * PFN_Enum)(HANDLE, DWORD, DWORD, PWTS_SESSION_INFOW*, DWORD*);
+	typedef BOOL(WINAPI * PFN_Query)(HANDLE, DWORD, WTS_INFO_CLASS, LPWSTR*, DWORD*);
+	typedef void(WINAPI * PFN_Free)(PVOID);
+	HMODULE dll = LoadLibraryExW(L"wtsapi32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+	auto enumerate = dll ? reinterpret_cast<PFN_Enum>(reinterpret_cast<void*>(GetProcAddress(dll, "WTSEnumerateSessionsW"))) : nullptr;
+	auto query = dll ? reinterpret_cast<PFN_Query>(reinterpret_cast<void*>(GetProcAddress(dll, "WTSQuerySessionInformationW"))) : nullptr;
+	auto release = dll ? reinterpret_cast<PFN_Free>(reinterpret_cast<void*>(GetProcAddress(dll, "WTSFreeMemory"))) : nullptr;
+	DWORD found = 0xFFFFFFFF;
+	PWTS_SESSION_INFOW sessions = nullptr;
+	DWORD count = 0;
+	if (!enumerate || !query || !release || !enumerate(WTS_CURRENT_SERVER_HANDLE, 0, 1, &sessions, &count)) {
+		list = "(sessions unavailable)";
+		return found;
+	}
+	static const char* const states[] = { "Active", "Connected", "ConnectQuery", "Shadow", "Disconnected", "Idle",
+		"Listen", "Reset", "Down", "Init" };
+	for (DWORD i = 0; i < count; ++i) {
+		const WTS_SESSION_INFOW& si = sessions[i];
+		std::string user;
+		LPWSTR name = nullptr;
+		DWORD bytes = 0;
+		if (query(WTS_CURRENT_SERVER_HANDLE, si.SessionId, WTSUserName, &name, &bytes) && name) {
+			char buf[256] = {};
+			WideCharToMultiByte(CP_UTF8, 0, name, -1, buf, sizeof(buf) - 1, NULL, NULL);
+			user = buf;
+			release(name);
+		}
+		list += std::to_string(si.SessionId) + " " +
+			(si.State < 10 ? states[si.State] : "?") + " [" + user + "]; ";
+		if (found == 0xFFFFFFFF && si.State == WTSActive && !user.empty() && si.SessionId != skip)
+			found = si.SessionId;
+	}
+	release(sessions);
+	return found;
+}
+
 } // namespace
 
 // Token of the user logged on to the desktop the server shows (a private
@@ -155,7 +196,25 @@ static HANDLE DuplicateDesktopUserToken()
 			cached = ExplorerToken(ownSession, &error);
 			if (!cached)
 				failures += "explorer token (session " + std::to_string(ownSession) + "): error " +
-					std::to_string(error);
+					std::to_string(error) + "; ";
+		}
+		// 4. Nobody in our session: the user of another active session
+		// (e.g. logged on through Remote Desktop or fast user switching).
+		if (!cached) {
+			std::string sessions;
+			const DWORD other = FindActiveUserSession(ownSession, sessions);
+			if (other != 0xFFFFFFFF) {
+				DWORD error = 0;
+				cached = SessionUserToken(other, &error);
+				if (!cached)
+					failures += "WTSQueryUserToken(session " + std::to_string(other) + "): error " +
+						std::to_string(error) + "; ";
+				else
+					vnclog.Print(LL_INTINFO, VNCLOG("desktop user token: using the user of session %lu\n"),
+						static_cast<unsigned long>(other));
+			}
+			if (!cached)
+				failures += "sessions: " + sessions;
 		}
 		cachedAt = now;
 		// Log changes only (this runs for every file request).
