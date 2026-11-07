@@ -290,7 +290,19 @@ public:
 	void setShowSettings(bool value) { showSettings = value; };
 	char *getLogFile() { return logfile; };
 	void setLogFile(char* value) { strcpy_s(logfile, value); };
+public:
+ bool getAutoReverseEnabled() const { return m_autoReverseEnabled; }
+ const char* getAutoReverseRepeaterHost() const { return m_autoReverseRepeaterHost; }
+ int getAutoReverseRepeaterPort() const { return m_autoReverseRepeaterPort; }
+ const char* getAutoReverseId() const { return m_autoReverseId; }
+ int getAutoReverseReconnectInterval() const { return m_autoReverseReconnectInterval; }
 private:
+ bool m_autoReverseEnabled = false;
+ char m_autoReverseRepeaterHost[MAX_HOST_NAME_LEN] = {};
+ int m_autoReverseRepeaterPort = 5500;
+ char m_autoReverseId[64] = {};
+ int m_autoReverseReconnectInterval = 5;
+
 	SettingsManager();
 	static SettingsManager* s_instance;
 	void setDefaults();

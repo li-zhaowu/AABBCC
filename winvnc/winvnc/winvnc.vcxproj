@@ -3252,6 +3252,7 @@ copy "$(OutDir)$(TargetName)$(TargetExt)" c:\uvnc\64\xp</Command>
     <ClInclude Include="ScreenCapture.h" />
     <ClInclude Include="ScSelect.h" />
     <ClInclude Include="credentials.h" />
+    <ClInclude Include="AutoReverse.h" />
     <ClInclude Include="SettingsManager.h" />
     <ClInclude Include="stdhdrs.h" />
     <ClInclude Include="TextChat.h" />

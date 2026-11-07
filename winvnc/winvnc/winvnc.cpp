@@ -45,6 +45,7 @@
 #include <errno.h>
 #include "credentials.h"
 #include "vncExtChannel.h"
+#include "AutoReverse.h"
 
 #pragma comment (lib, "comctl32")
 
@@ -1048,7 +1049,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine2
 					}
 				}
 				i = end;
-				if (!postHelper::PostAddConnectClient(pszId))
+				if (strstr(szCmdLine, "-autoreverse") != NULL) { delete[] pszId; pszId = NULL; }
+                else if (!postHelper::PostAddConnectClient(pszId))
 				{
 					PostAddConnectClient_bool = true;
 					if (pszId == NULL)
@@ -1266,7 +1268,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine2
 						// We can not contact a runnning service, permissions, so we must store the settings
 						// and process until the vncmenu has been started
 						vnclog.Print(LL_INTERR, VNCLOG("PostAddNewRepeaterClient I\n"));
-						if (!postHelper::PostAddNewRepeaterClient())
+						if (strstr(szCmdLine, "-autoreverse") == NULL && !postHelper::PostAddNewRepeaterClient())
 						{
 							PostAddNewRepeaterClient_bool = true;
 							port_int = 0;
@@ -1284,6 +1286,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine2
 				continue;
 			}
 
+            if (strncmp(&szCmdLine[i], "-autoreverse", 12) == 0) {
+                i += 12;
+                continue;
+            }
+            if (strncmp(&szCmdLine[i], "-reconnect ", 11) == 0) {
+                i += 11;
+                while (szCmdLine[i] && szCmdLine[i] <= ' ') ++i;
+                while (szCmdLine[i] && szCmdLine[i] > ' ') ++i;
+                continue;
+            }
+
 			// Either the user gave the -help option or there is something odd on the cmd-line!
 
 			// Show the usage dialog
@@ -1292,7 +1305,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine2
 		};
 
 		// If no arguments were given then just run
-		if (!argfound)
+		if (!argfound || strstr(szCmdLine, "-autoreverse") != NULL)
 		{
 			if (!Myinit(hInstance))
 				return return2(0);
@@ -1473,6 +1486,7 @@ int WinVNCAppMain()
 	//vnclog.Print(LL_INTINFO, VNCLOG("***** DBG - Previous instance checked - Trying to create server\n"));
 	// CREATE SERVER
 	vncServer server;
+	AutoReverseConnection autoReverse(server);
 
 	// Set the name and port number
 	server.SetName(szAppName);

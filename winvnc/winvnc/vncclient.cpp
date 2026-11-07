@@ -5325,6 +5325,7 @@ vncClient::vncClient() : m_clipboard(ClipboardSettings::defaultServerCaps), Send
 
 vncClient::~vncClient()
 {
+ if (autoReverseLease) autoReverseLease->store(false);
 	cl_connected = false;
 	// Normally already stopped by vncClientThread; make sure the sender thread
 	// is gone before any member it uses is destroyed.

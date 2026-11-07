@@ -293,7 +293,7 @@ vncClientId vncServer::AddClient(VSocket* socket, BOOL auth, BOOL shared, int ca
 
 // adzm 2009-07-05 - repeater IDs
 vncClientId vncServer::AddClient(VSocket* socket, BOOL auth, BOOL shared, int capability, rfbProtocolVersionMsg* protocolMsg,
-	VString szRepeaterID, VString szHost, VCard port, BOOL outgoing)
+	VString szRepeaterID, VString szHost, VCard port, BOOL outgoing, std::shared_ptr<std::atomic<bool>> autoReverseLease)
 {
 	vnclog.Print(LL_STATE, VNCLOG("AddClient() started\n"));
 	vncClient* client;
@@ -313,7 +313,8 @@ vncClientId vncServer::AddClient(VSocket* socket, BOOL auth, BOOL shared, int ca
 		delete socket;
 		return -1;
 	}
-	client->setTiming(GetTickCount());
+	client->autoReverseLease = std::move(autoReverseLease);
+ client->setTiming(GetTickCount());
 	// Set the client's settings
 	client->SetOutgoing(outgoing);
 	client->SetProtocolVersion(protocolMsg);

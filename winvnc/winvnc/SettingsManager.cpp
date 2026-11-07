@@ -289,6 +289,12 @@ void SettingsManager::setDefaults()
 
 void SettingsManager::load()
 {
+ m_autoReverseEnabled = iniFile.ReadInt("auto_reverse", "AutoReverseEnabled", 0) != 0;
+ m_autoReverseRepeaterPort = iniFile.ReadInt("auto_reverse", "AutoReverseRepeaterPort", 5500);
+ m_autoReverseReconnectInterval = iniFile.ReadInt("auto_reverse", "AutoReverseReconnectInterval", 5);
+ iniFile.ReadString("auto_reverse", "AutoReverseRepeaterHost", m_autoReverseRepeaterHost, MAX_HOST_NAME_LEN);
+ iniFile.ReadString("auto_reverse", "AutoReverseId", m_autoReverseId, 64);
+
 	m_pref_RemoveWallpaper = iniFile.ReadInt("admin", "RemoveWallpaper", m_pref_RemoveWallpaper);
 	m_pref_RemoveEffects = iniFile.ReadInt("admin", "RemoveEffects", m_pref_RemoveEffects);
 	m_pref_RemoveFontSmoothing = iniFile.ReadInt("admin", "RemoveFontSmoothing", m_pref_RemoveFontSmoothing);
@@ -440,6 +446,12 @@ void SettingsManager::saveViewOnlyPassword() {
 
 void SettingsManager::save()
 {
+ iniFile.WriteInt("auto_reverse", "AutoReverseEnabled", m_autoReverseEnabled);
+ iniFile.WriteInt("auto_reverse", "AutoReverseRepeaterPort", m_autoReverseRepeaterPort);
+ iniFile.WriteInt("auto_reverse", "AutoReverseReconnectInterval", m_autoReverseReconnectInterval);
+ iniFile.WriteString("auto_reverse", "AutoReverseRepeaterHost", m_autoReverseRepeaterHost);
+ iniFile.WriteString("auto_reverse", "AutoReverseId", m_autoReverseId);
+
 	if (!getAllowProperties())
 		return;
 

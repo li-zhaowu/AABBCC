@@ -78,7 +78,7 @@ public:
 	virtual vncClientId AddClient(VSocket *socket,
 		BOOL auth, BOOL shared, int capability,rfbProtocolVersionMsg *protocolMsg, BOOL outgoing);
 	virtual vncClientId AddClient(VSocket *socket,
-		BOOL auth, BOOL shared, int capability,rfbProtocolVersionMsg *protocolMsg, VString szRepeaterID, VString szHost, VCard port, BOOL outgoing);
+		BOOL auth, BOOL shared, int capability,rfbProtocolVersionMsg *protocolMsg, VString szRepeaterID, VString szHost, VCard port, BOOL outgoing, std::shared_ptr<std::atomic<bool>> autoReverseLease = {});
 
 	virtual BOOL Authenticated(vncClientId client);
 	virtual void KillClient(vncClientId client);

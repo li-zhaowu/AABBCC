@@ -33,6 +33,8 @@ typedef SHORT vncClientId;
 #pragma warning(disable : 4786)
 #endif
 
+#include <atomic>
+#include <memory>
 #include <list>
 #include <string>
 #include <vector>
@@ -103,6 +105,7 @@ class vncClientUpdateThread : public omni_thread
 {
 public:
 
+
 	// Init
 	BOOL Init(vncClient* client);
 
@@ -136,6 +139,7 @@ protected:
 class vncClient
 {
 public:
+	std::shared_ptr<std::atomic<bool>> autoReverseLease;
 	// Constructor/destructor
 	vncClient();
 	virtual ~vncClient();

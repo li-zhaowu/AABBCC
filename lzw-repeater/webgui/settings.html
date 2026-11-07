@@ -1,0 +1,123 @@
+<html>
+
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>UltraVNC 中继器设置</title>
+<style type="text/css">
+.style1 {
+	vertical-align: middle;
+}
+</style>
+</head>
+
+<body>
+
+<h1><img class="style1" src="images2.jpg"> UltraVNC 中继器设置</h1>
+
+
+
+<table style="width: 250px">
+	<tr>
+		<td style="width: 151px">
+		<form METHOD="LINK" ACTION="index.html">
+		<INPUT TYPE="submit" VALUE="统计" style="width: 100px">
+		</form>
+	</td>
+		<td style="width: 151px">
+		<form METHOD="LINK" ACTION="passwd.html">
+		<INPUT TYPE="submit" VALUE="密码" style="width: 100px">
+		</form>
+	</td>
+	<td style="width: 151px">
+		<form METHOD="LINK" ACTION="log.html">
+		<INPUT TYPE="submit" VALUE="日志" style="width: 100px">
+		</form>
+	</td>
+
+		</tr>
+
+</table>
+<br>
+
+
+<form action="testaction.cgi" method="GET" name="testform">
+
+	<table style="width: 770px">
+	
+		<tr>
+			<td style="width: 275px; height: 25px;">保持连接（需要 winvnc >=1201）：</td>
+			<td style="width: 32px; height: 25px;"> 
+			<input type="checkbox" name="keepalive" value="keepalive" <!--#include file="keepalive.ssi" --> > </td>
+		</tr>
+
+	
+		<tr>
+			<td style="width: 275px; height: 25px;">模式：</td>
+			<td style="width: 32px; height: 25px;"> I 
+			<input type="checkbox" name="mode1" value="mode1" <!--#include file="mode1.ssi" --> > </td>
+			<td style="width: 32px; height: 25px;"> II 
+			<input type="checkbox" name="mode2" value="mode2" <!--#include file="mode2.ssi" --> > </td>
+		</tr>
+
+		<tr>
+			<td style="width: 275px">查看器监听端口：</td>
+			<td style="width: 32px">
+			<input name="server_port" type="text" <!--#include file="sport.ssi" --> style="width: 50px"></td>
+			<td>&nbsp;</td>
+
+		</tr>
+		<tr>
+			<td style="width: 275px">服务器监听端口：</td>
+			<td style="width: 32px">
+			<input name="viewer_port" type="text" <!--#include file="vport.ssi" --> style="width: 50px"></td>
+			<td>&nbsp;</td>
+
+		</tr>
+		
+		<tr>
+			<td style="width: 275px">仅允许连接到：<br>格式：IP或范围 : 端口 ; 
+			例如：123.123.123.123:5800;165.165.165:2300<br>165.165.165:2300 -&gt; <br>
+			允许连接到 165.165.165.x 的 2300 端口<br></td>
+			<td style="width: 32px"> <input type="checkbox" name="allow_on" value="allow_on" <!--#include file="acon.ssi" -->> </td>
+			<td style="width: 350px">
+			<input name="allow_con" type="text" <!--#include file="acons.ssi" --> style="width: 300px; height: 60px;"></td>
+		</tr>
+
+
+		<tr>
+			<td style="width: 275px">拒绝连接到：</td>
+			<td style="width: 32px"> <input type="checkbox" name="refuse_on" value="refuse_on" <!--#include file="rcon.ssi" --> > </td>
+			<td style="width: 350px">
+			<input name="refuse_con" type="text" <!--#include file="rcons.ssi" --> style="width: 300px; height: 60px;"></td>
+		</tr>
+		<tr>
+			<td style="width: 275px">仅允许ID：</td>
+			<td style="width: 32px"> <input type="checkbox" name="id_on" value="id_on" <!--#include file="aid.ssi" -->> </td>
+			<td style="width: 350px">
+			<input name="id_con" type="text" <!--#include file="aids.ssi" --> style="width: 300px; height: 60px;"></td>
+		</tr>
+		
+		<tr>
+			<td style="width: 275px">Web 界面端口：</td>
+			<td style="width: 32px"> <input name="web_port" type="text"  <!--#include file="webport.ssi" --> style="width: 50px"> </td>
+			<td style="width: 350px">
+		</tr>
+
+		<tr>
+			<td style="width: 375px">使用 comment.txt 检查查看器访问：<br>
+			ID+ALK:1345&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; comment.txt 
+			1345&nbsp;&nbsp;&nbsp; ALK</td>
+			<td style="width: 32px"> <input type="checkbox" name="ucom_on" value="ucom_on" <!--#include file="ucom.ssi" -->> </td>
+			<td style="width: 350px">
+		</tr>
+
+		
+	</table>
+	<input name="hidden" type="hidden">
+	 <input type="submit" value="保存设置">
+</form>
+
+</body>
+
+</html>

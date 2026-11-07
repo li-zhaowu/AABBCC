@@ -1,0 +1,105 @@
+<html>
+
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>UltraVNC 中继器注释</title>
+<style type="text/css">
+.style1 {
+	vertical-align: middle;
+}
+.style2 {
+	border-style: solid;
+	border-width: 1px;
+}
+.style3 {
+	text-align: center;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1><img class="style1" src="images2.jpg"> UltraVNC 中继器注释</h1>
+
+
+<table style="width: 250px">
+	<tr>
+		<td style="width: 151px">
+		<form METHOD="LINK" ACTION="index.html">
+		<INPUT TYPE="submit" VALUE="返回" style="width: 100px">
+		</form>
+		</td>
+		<td>
+			<form action="testaction5.cgi" method="GET" name="testform5">
+			<input name="hidden" type="hidden">
+			<input type="submit" value="重新加载注释文件">
+			</form>		
+		</td>
+	<br>
+	
+
+	</tr>
+</table>
+
+<br>
+
+<form action="testaction2.cgi" method="GET" name="testform2">
+
+	<table style="width: 720">
+	
+
+		<tr>
+			<td style="width: 20px">ID: </td>
+			<td style="width: 72px">
+			<input name="id" type="text" value=""  style="width: 72px"></td>
+			<td style="width: 72px">注释：</td>
+			<td style="width: 376px">
+			<input name="comment" type="text" value="" style="width: 450px"></td>
+
+
+		</tr>
+		
+	</table>
+	<br>
+	<input name="hidden" type="hidden">
+	 <input type="submit" value="添加注释">
+</form>
+<br>
+<form action="testaction4.cgi" method="GET" name="testform4">
+
+	<table style="width: 720">
+	
+
+		<tr>
+			<td style="width: 20px">ID: </td>
+			<td style="width: 72px">
+			<input name="id" type="text" value=""  style="width: 72px"></td>			
+		</tr>
+		
+	</table>
+	<br>
+	<input name="hidden" type="hidden">
+	 <input type="submit" value="删除ID">
+</form>
+
+<br>
+<form action="testaction3.cgi" method="GET" name="testform3">
+
+	<table style="width: 720">
+	<!--#include file="listcomment.ssi" -->
+	</table>
+	<br>
+	<input name="hidden" type="hidden">
+	 <input type="submit" value="保存全部">
+</form>
+
+
+
+
+
+</body>
+
+</html>
