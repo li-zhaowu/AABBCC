@@ -16,6 +16,7 @@
 #include "stdhdrs.h"
 #include "vncviewer.h"
 #include "ClientConnection.h"
+#include "UiText.h"
 #include "ClientConnectionExt.h"
 #include "common/WindowProto.h"
 
@@ -104,7 +105,7 @@ INT_PTR CALLBACK PickerProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 			if (!e.program.empty())
 				line += L"    [" + Utf8ToWide(e.program) + L"]";
 			if (e.minimized)
-				line += L"    (minimized)";
+				line += std::wstring(L"    ") + Tr(L"(minimized)");
 			const LRESULT idx = SendMessageW(list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(line.c_str()));
 			SendMessageW(list, LB_SETITEMDATA, idx, static_cast<LPARAM>(i));
 		}
@@ -145,13 +146,13 @@ int PickWindow(HWND parent, const std::vector<window::Entry>& list)
 	t.insert(t.end(), p, p + sizeof(dt) / sizeof(WORD));
 	t.push_back(0); // no menu
 	t.push_back(0); // default class
-	AddString(t, L"Show only one remote window");
+	AddString(t, Tr(L"Show only one remote window"));
 	t.push_back(9); // font size
 	AddString(t, L"Segoe UI");
 	AddItem(t, LBS_NOTIFY | WS_BORDER | WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT, 7, 7, 306, 162, kIdList,
 		0x0083, L"");
-	AddItem(t, BS_DEFPUSHBUTTON | WS_TABSTOP, 206, 177, 50, 16, IDOK, 0x0080, L"Show");
-	AddItem(t, BS_PUSHBUTTON | WS_TABSTOP, 263, 177, 50, 16, IDCANCEL, 0x0080, L"Cancel");
+	AddItem(t, BS_DEFPUSHBUTTON | WS_TABSTOP, 206, 177, 50, 16, IDOK, 0x0080, Tr(L"Show"));
+	AddItem(t, BS_PUSHBUTTON | WS_TABSTOP, 263, 177, 50, 16, IDCANCEL, 0x0080, Tr(L"Cancel"));
 
 	PickerData d = { &list, -1 };
 	const INT_PTR r = DialogBoxIndirectParamW(GetModuleHandleW(NULL), reinterpret_cast<LPCDLGTEMPLATEW>(t.data()),
@@ -181,12 +182,12 @@ void ClientConnection::ToggleWindowMode()
 	}
 	const wchar_t* problem = nullptr;
 	if (!m_ext->ChannelUsable(kChWindow))
-		problem = L"The server does not offer single window mode (it needs the new UltraVNC server).";
+		problem = Tr(L"The server does not offer single window mode (it needs the new UltraVNC server).");
 	else if (!FramebufferIsBgra32(m_myFormat))
-		problem = L"Single window mode needs the \"Full colors\" (32 bit) pixel format.\n\n"
-		          L"Change it in the connection options and try again.";
+		problem = Tr(L"Single window mode needs the \"Full colors\" (32 bit) pixel format.\n\n"
+		             L"Change it in the connection options and try again.");
 	if (problem) {
-		MessageBoxW(m_hwndMain, problem, L"UltraVNC Viewer - Single window", MB_OK | MB_ICONINFORMATION);
+		MessageBoxW(m_hwndMain, problem, Tr(L"UltraVNC Viewer - Single window"), MB_OK | MB_ICONINFORMATION);
 		return;
 	}
 	m_windowPicking = true;
@@ -237,7 +238,7 @@ void ClientConnection::OnWindowModeEvent(WPARAM event, LPARAM param)
 			return;
 		m_windowPicking = false;
 		if (list.empty()) {
-			MessageBoxW(m_hwndMain, L"No windows to show on the remote computer.", L"UltraVNC Viewer - Single window",
+			MessageBoxW(m_hwndMain, Tr(L"No windows to show on the remote computer."), Tr(L"UltraVNC Viewer - Single window"),
 				MB_OK | MB_ICONINFORMATION);
 			return;
 		}
@@ -254,8 +255,8 @@ void ClientConnection::OnWindowModeEvent(WPARAM event, LPARAM param)
 	}
 	if (event == kEventMinimized) {
 		if (m_windowRequested &&
-		    MessageBoxW(m_hwndMain, L"The window was minimized on the remote computer.\n\nRestore it?",
-			    L"UltraVNC Viewer - Single window", MB_YESNO | MB_ICONQUESTION) == IDYES)
+		    MessageBoxW(m_hwndMain, Tr(L"The window was minimized on the remote computer.\n\nRestore it?"),
+			    Tr(L"UltraVNC Viewer - Single window"), MB_YESNO | MB_ICONQUESTION) == IDYES)
 			SendWindowMessage(window::kRestore, {});
 		return;
 	}
@@ -269,10 +270,10 @@ void ClientConnection::OnWindowModeEvent(WPARAM event, LPARAM param)
 		}
 		LeaveWindowMode(false);
 		if (param != window::kStateEnded) {
-			std::wstring text = L"Single window mode ended";
+			std::wstring text = Tr(L"Single window mode ended");
 			const std::wstring w = Utf8ToWide(reason);
 			text += w.empty() ? L"." : L":\n\n" + w;
-			MessageBoxW(m_hwndMain, text.c_str(), L"UltraVNC Viewer - Single window", MB_OK | MB_ICONINFORMATION);
+			MessageBoxW(m_hwndMain, text.c_str(), Tr(L"UltraVNC Viewer - Single window"), MB_OK | MB_ICONINFORMATION);
 		}
 	}
 }

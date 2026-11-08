@@ -26,6 +26,7 @@
 #include "ClientConnection.h"
 #include "ClientConnectionExt.h"
 #include "FileManagerWindow.h"
+#include "UiText.h"
 #include "common/FileManClient.h"
 
 using namespace extmsg;
@@ -124,7 +125,7 @@ void ClientConnection::OpenFileManager()
 		m_fileWindow->Activate();
 	}
 	if (!m_fileWindow) {
-		MessageBoxW(m_hwndMain, L"The file transfer window could not be opened.", L"UltraVNC Viewer",
+		MessageBoxW(m_hwndMain, Tr(L"The file transfer window could not be opened."), L"UltraVNC Viewer",
 			MB_OK | MB_ICONERROR);
 		if (m_opts->m_fileMode)
 			CloseFileModeConnection();
@@ -138,10 +139,10 @@ void ClientConnection::FileModeFallback()
 	if (m_ext->IsNegotiated()) {
 		// A new server that does not allow it for us.
 		MessageBoxW(NULL,
-			L"The server does not allow file transfer for this connection.\n\n"
-			L"File transfer may be turned off in the server settings, or this connection may not "
-			L"be allowed to use keyboard and mouse.",
-			L"UltraVNC Viewer - File transfer", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+			Tr(L"The server does not allow file transfer for this connection.\n\n"
+			   L"File transfer may be turned off in the server settings, or this connection may not "
+			   L"be allowed to use keyboard and mouse."),
+			Tr(L"UltraVNC Viewer - File transfer"), MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
 		CloseFileModeConnection();
 		return;
 	}
@@ -150,7 +151,7 @@ void ClientConnection::FileModeFallback()
 		PostMessage(m_hwndMain, WM_SYSCOMMAND, ID_FILETRANSFER, 0);
 		return;
 	}
-	MessageBoxW(NULL, L"This server does not support file transfer.", L"UltraVNC Viewer - File transfer",
+	MessageBoxW(NULL, Tr(L"This server does not support file transfer."), Tr(L"UltraVNC Viewer - File transfer"),
 		MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
 	CloseFileModeConnection();
 }

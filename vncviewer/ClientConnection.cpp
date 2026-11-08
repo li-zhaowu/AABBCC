@@ -72,6 +72,7 @@ using namespace helper;
 #include "AudioPlayer.h"
 #include "FileManagerWindow.h"
 #include "MediaSettings.h"
+#include "UiText.h"
 extern HINSTANCE m_hInstResDLL;
 
 // [v1.0.2-jp1 fix]
@@ -1543,10 +1544,10 @@ void ClientConnection::CreateDisplay()
 		AppendMenu(hsysmenu, MF_STRING, ID_DBUTTON,	sz_L18);
 		AppendMenu(hsysmenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hsysmenu, MF_STRING, ID_SW, L"Take Snapshot  \tCtrl+Alt+Shift+S");
-		AppendMenu(hsysmenu, MF_STRING, ID_VIDEOMODE, L"Video Mode (GPU)");
-		AppendMenu(hsysmenu, MF_STRING, ID_WINDOWMODE, L"Single Window...");
-		AppendMenu(hsysmenu, MF_STRING, ID_REMOTEAUDIO, L"Remote Audio");
-		AppendMenu(hsysmenu, MF_STRING, ID_MEDIASETTINGS, L"Media Settings...");
+		AppendMenu(hsysmenu, MF_STRING, ID_VIDEOMODE, Tr(L"Video Mode (GPU)"));
+		AppendMenu(hsysmenu, MF_STRING, ID_WINDOWMODE, Tr(L"Single Window..."));
+		AppendMenu(hsysmenu, MF_STRING, ID_REMOTEAUDIO, Tr(L"Remote Audio"));
+		AppendMenu(hsysmenu, MF_STRING, ID_MEDIASETTINGS, Tr(L"Media Settings..."));
 		// AppendMenu(hsysmenu, MF_STRING, ID_BUTTON,	_T("Show Toolbar Buttons"));
 		AppendMenu(hsysmenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hsysmenu, MF_STRING, ID_DINPUT,	sz_L19); // disable remote input

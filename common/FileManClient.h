@@ -53,6 +53,10 @@ struct Result {
 	std::string Describe() const;
 };
 
+// Optional: the text for a status in the user's language (UTF-8); used by
+// Result::Describe. Set once by the viewer.
+void SetStatusText(std::string (*text)(uint32_t status));
+
 class FileManClient;
 
 // Reads one remote file from start to end, with read-ahead (files dragged

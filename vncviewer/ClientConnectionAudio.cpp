@@ -17,6 +17,7 @@
 #include "ClientConnectionExt.h"
 #include "AudioPlayer.h"
 #include "MediaSettings.h"
+#include "UiText.h"
 #include "common/AudioProto.h"
 
 using namespace extmsg;
@@ -46,9 +47,9 @@ void ClientConnection::ToggleRemoteAudio()
 	}
 	if (!m_ext->ChannelUsable(kChAudio)) {
 		MessageBoxW(m_hwndMain,
-			L"The server does not offer remote audio.\n\n"
-			L"Remote audio needs the new UltraVNC server.",
-			L"UltraVNC Viewer - Remote audio", MB_OK | MB_ICONINFORMATION);
+			Tr(L"The server does not offer remote audio.\n\n"
+			   L"Remote audio needs the new UltraVNC server."),
+			Tr(L"UltraVNC Viewer - Remote audio"), MB_OK | MB_ICONINFORMATION);
 		return;
 	}
 	if (!m_audioPlayer)
@@ -92,16 +93,16 @@ void ClientConnection::OnAudioEvent(WPARAM statusCode)
 		return; // the user switched it off in the meantime
 	// Tell the server too: when the decoder failed here, it is still sending.
 	StopRemoteAudio(true);
-	std::wstring text = L"Remote audio ended:\n\n";
+	std::wstring text = Tr(L"Remote audio ended:\n\n");
 	const int n = MultiByteToWideChar(CP_UTF8, 0, reason.c_str(), -1, NULL, 0);
 	if (n > 1) {
 		std::wstring w(n - 1, L'\0');
 		MultiByteToWideChar(CP_UTF8, 0, reason.c_str(), -1, &w[0], n);
 		text += w;
 	} else {
-		text += L"(no reason given)";
+		text += Tr(L"(no reason given)");
 	}
-	MessageBoxW(m_hwndMain, text.c_str(), L"UltraVNC Viewer - Remote audio", MB_OK | MB_ICONINFORMATION);
+	MessageBoxW(m_hwndMain, text.c_str(), Tr(L"UltraVNC Viewer - Remote audio"), MB_OK | MB_ICONINFORMATION);
 }
 
 // Connection (re)start and suspend. Audio stays off until switched on again.

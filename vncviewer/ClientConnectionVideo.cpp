@@ -21,6 +21,7 @@
 #include "VideoDecoder.h"
 #include "VideoCursor.h"
 #include "MediaSettings.h"
+#include "UiText.h"
 #include "common/VideoProto.h"
 
 #include <libyuv.h> // vcpkg port "libyuv"
@@ -128,17 +129,17 @@ void ClientConnection::ToggleVideoMode()
 	}
 	const wchar_t* problem = nullptr;
 	if (!m_ext->ChannelUsable(kChVideo))
-		problem = L"The server does not offer video mode.\n\n"
-		          L"Video mode needs the new UltraVNC server on a machine with an NVIDIA GPU "
-		          L"and a current NVIDIA driver (see the server log for details).";
+		problem = Tr(L"The server does not offer video mode.\n\n"
+		             L"Video mode needs the new UltraVNC server on a machine with an NVIDIA GPU "
+		             L"and a current NVIDIA driver (see the server log for details).");
 	else if (!FramebufferIsBgra32(m_myFormat))
-		problem = L"Video mode needs the \"Full colors\" (32 bit) pixel format.\n\n"
-		          L"Change it in the connection options and try again.";
+		problem = Tr(L"Video mode needs the \"Full colors\" (32 bit) pixel format.\n\n"
+		             L"Change it in the connection options and try again.");
 	else if (m_nServerScale != 1)
-		problem = L"Video mode does not work with server side scaling.\n\n"
-		          L"Set server scaling to 1/1 and try again.";
+		problem = Tr(L"Video mode does not work with server side scaling.\n\n"
+		             L"Set server scaling to 1/1 and try again.");
 	if (problem) {
-		MessageBoxW(m_hwndMain, problem, L"UltraVNC Viewer - Video mode", MB_OK | MB_ICONINFORMATION);
+		MessageBoxW(m_hwndMain, problem, Tr(L"UltraVNC Viewer - Video mode"), MB_OK | MB_ICONINFORMATION);
 		return;
 	}
 
@@ -228,16 +229,16 @@ void ClientConnection::OnVideoModeEnded(WPARAM statusCode)
 		return; // already stopped by the user (this is the server's confirmation)
 	StopVideoMode(false);
 	if (statusCode != video::kStatusStopped) {
-		std::wstring text = L"Video mode ended:\n\n";
+		std::wstring text = Tr(L"Video mode ended:\n\n");
 		const int n = MultiByteToWideChar(CP_UTF8, 0, reason.c_str(), -1, NULL, 0);
 		if (n > 1) {
 			std::wstring w(n - 1, L'\0');
 			MultiByteToWideChar(CP_UTF8, 0, reason.c_str(), -1, &w[0], n);
 			text += w;
 		} else {
-			text += L"(no reason given)";
+			text += Tr(L"(no reason given)");
 		}
-		MessageBoxW(m_hwndMain, text.c_str(), L"UltraVNC Viewer - Video mode", MB_OK | MB_ICONINFORMATION);
+		MessageBoxW(m_hwndMain, text.c_str(), Tr(L"UltraVNC Viewer - Video mode"), MB_OK | MB_ICONINFORMATION);
 	}
 }
 

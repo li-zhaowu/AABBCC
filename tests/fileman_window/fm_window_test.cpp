@@ -10,6 +10,7 @@
 #include "../../common/FileManClient.h"
 #include "../../common/FileManServer.h"
 #include "FileManagerWindow.h"
+#include "MediaSettings.h"
 
 #include <cstdio>
 #include <deque>
@@ -68,7 +69,8 @@ private:
 	std::thread m_thread;
 };
 
-static std::wstring g_shot;
+HINSTANCE m_hInstResDLL = NULL; // the viewer's resource module (UiText)
+static std::wstring g_shot, g_dialogShot;
 static HWND g_window;
 
 static void WriteFileBytes(const std::wstring& path, size_t n)
@@ -117,11 +119,25 @@ static bool SaveBitmap(HWND hwnd, const std::wstring& path)
 	return true;
 }
 
+// Photographs the media settings dialog (from inside its modal loop) and
+// closes it.
+static void CALLBACK DialogTimer(HWND, UINT, UINT_PTR id, DWORD)
+{
+	KillTimer(NULL, id);
+	HWND dlg = GetActiveWindow();
+	if (dlg) {
+		SaveBitmap(dlg, g_dialogShot);
+		std::printf("media settings dialog saved\n");
+		PostMessageW(dlg, WM_COMMAND, IDCANCEL, 0);
+	}
+}
+
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 {
 	int argc = 0;
 	wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 	g_shot = argc > 1 ? argv[1] : L"fm_window.bmp";
+	g_dialogShot = argc > 2 ? argv[2] : L"media_settings.bmp";
 	INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES | ICC_BAR_CLASSES };
 	InitCommonControlsEx(&icc);
 
@@ -205,6 +221,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 				std::printf("queue items: %d\n", ListView_GetItemCount(GetDlgItem(g_window, 1301)));
 				SetTimer(NULL, 1, 3000, NULL);
 			} else if (step == 3) {
+				SetTimer(NULL, 0, 800, &DialogTimer);
+				const bool ok = ShowMediaSettingsDialog(g_window);
+				std::printf("media settings dialog closed (%s)\n", ok ? "OK" : "cancel");
+				SetTimer(NULL, 1, 100, NULL);
+			} else if (step == 4) {
 				// Close without the "transfers running" question.
 				win->Destroy();
 			}

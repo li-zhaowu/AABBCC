@@ -19,11 +19,20 @@ using Clock = std::chrono::steady_clock;
 
 namespace fileman {
 
+namespace {
+std::string (*g_statusText)(uint32_t) = nullptr;
+}
+
+void SetStatusText(std::string (*text)(uint32_t status))
+{
+	g_statusText = text;
+}
+
 std::string Result::Describe() const
 {
 	if (status == kOk)
 		return "OK";
-	std::string s = StatusName(status);
+	std::string s = g_statusText ? g_statusText(status) : std::string(StatusName(status));
 	if (!message.empty())
 		s += ": " + message;
 	return s;

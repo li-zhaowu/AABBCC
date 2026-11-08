@@ -9,6 +9,7 @@
 
 #include "FileManagerWindow.h"
 #include "FileManagerDragDrop.h"
+#include "UiText.h"
 #include "common/FileManServer.h" // string and time helpers
 
 #include <knownfolders.h>
@@ -203,8 +204,8 @@ FileManagerWindow* FileManagerWindow::Open(const Options& options)
 		registered = true;
 	}
 	auto* self = new FileManagerWindow(options);
-	const std::wstring title = options.fileMode ? options.host + L" - UltraVNC File Transfer"
-	                                            : L"File Transfer - " + options.host;
+	const std::wstring title = options.fileMode ? TrF(L"%ls - UltraVNC File Transfer", options.host.c_str())
+	                                            : TrF(L"File Transfer - %ls", options.host.c_str());
 	HWND hwnd = CreateWindowExW(WS_EX_APPWINDOW, kClassName, title.c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
 		CW_USEDEFAULT, CW_USEDEFAULT, 1000, 680, NULL, NULL, inst, self);
 	if (!hwnd) {
@@ -216,6 +217,8 @@ FileManagerWindow* FileManagerWindow::Open(const Options& options)
 
 FileManagerWindow::FileManagerWindow(const Options& options) : m_options(options), m_client(options.client)
 {
+	// Error texts from the file engine in the user's language.
+	SetStatusText([](uint32_t status) { return WideToUtf8(Tr(Utf8ToWide(StatusName(status)).c_str())); });
 	m_panes[kLocal].id = kLocal;
 	m_panes[kRemote].id = kRemote;
 	m_cookie = static_cast<uint32_t>(GetTickCount()) ^ static_cast<uint32_t>(reinterpret_cast<uintptr_t>(this));
@@ -284,15 +287,15 @@ void FileManagerWindow::CreateChildren()
 	CreatePane(m_panes[kLocal]);
 	CreatePane(m_panes[kRemote]);
 
-	m_queueTitle = CreateWindowExW(0, L"STATIC", L"Transfers", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+	m_queueTitle = CreateWindowExW(0, L"STATIC", Tr(L"Transfers"), WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
 		0, 0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdQueueTitle)), inst, NULL);
 	m_queueSummary = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE |
 		SS_ENDELLIPSIS, 0, 0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdQueueSummary)), inst, NULL);
-	m_btnCancel = CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+	m_btnCancel = CreateWindowExW(0, L"BUTTON", Tr(L"Cancel"), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 		0, 0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdQueueCancel)), inst, NULL);
-	m_btnRetry = CreateWindowExW(0, L"BUTTON", L"Retry", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+	m_btnRetry = CreateWindowExW(0, L"BUTTON", Tr(L"Retry"), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 		0, 0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdQueueRetry)), inst, NULL);
-	m_btnClear = CreateWindowExW(0, L"BUTTON", L"Clear finished", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+	m_btnClear = CreateWindowExW(0, L"BUTTON", Tr(L"Clear finished"), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 		0, 0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdQueueClear)), inst, NULL);
 	m_queueList = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP |
 		LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS, 0, 0, 0, 0, m_hwnd,
@@ -300,8 +303,8 @@ void FileManagerWindow::CreateChildren()
 	ListView_SetExtendedListViewStyle(m_queueList, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 	SetExplorerTheme(m_queueList);
 	const struct { const wchar_t* name; int width; int fmt; } qcols[] = {
-		{ L"Name", 260, LVCFMT_LEFT }, { L"Progress", 160, LVCFMT_LEFT }, { L"Size", 90, LVCFMT_RIGHT },
-		{ L"Speed", 90, LVCFMT_RIGHT }, { L"Time left", 80, LVCFMT_RIGHT }, { L"Status", 300, LVCFMT_LEFT },
+		{ Tr(L"Name"), 260, LVCFMT_LEFT }, { Tr(L"Progress"), 160, LVCFMT_LEFT }, { Tr(L"Size"), 90, LVCFMT_RIGHT },
+		{ Tr(L"Speed"), 90, LVCFMT_RIGHT }, { Tr(L"Time left"), 80, LVCFMT_RIGHT }, { Tr(L"Status"), 300, LVCFMT_LEFT },
 	};
 	for (int i = 0; i < 6; ++i) {
 		LVCOLUMNW col = {};
@@ -322,12 +325,12 @@ void FileManagerWindow::CreatePane(Pane& p)
 		return CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0, m_hwnd,
 			reinterpret_cast<HMENU>(static_cast<INT_PTR>(CtlId(pane, id))), inst, NULL);
 	};
-	const std::wstring title = pane == kLocal ? L"This computer" : L"Remote: " + m_options.host;
+	const std::wstring title = pane == kLocal ? std::wstring(Tr(L"This computer")) : TrF(L"Remote: %ls", m_options.host.c_str());
 	p.title = make(0, L"STATIC", title.c_str(), SS_LEFT | SS_CENTERIMAGE | SS_ENDELLIPSIS, kIdTitle);
 	p.places = make(0, WC_COMBOBOXW, L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST, kIdPlaces);
 	p.address = make(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL, kIdAddress);
 	SetWindowSubclass(p.address, &FileManagerWindow::EditSubclass, 1, reinterpret_cast<DWORD_PTR>(this));
-	SendMessageW(p.address, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"Type a folder and press Enter"));
+	SendMessageW(p.address, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(Tr(L"Type a folder and press Enter")));
 	p.btnUp = make(0, L"BUTTON", kGlyphUp, WS_TABSTOP | BS_PUSHBUTTON, kIdUp);
 	p.btnRefresh = make(0, L"BUTTON", kGlyphRefresh, WS_TABSTOP | BS_PUSHBUTTON, kIdRefresh);
 	p.btnNew = make(0, L"BUTTON", kGlyphNewFolder, WS_TABSTOP | BS_PUSHBUTTON, kIdNew);
@@ -335,7 +338,7 @@ void FileManagerWindow::CreatePane(Pane& p)
 	p.list = make(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"", WS_TABSTOP | LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS |
 		LVS_EDITLABELS | LVS_SHAREIMAGELISTS, kIdList);
 	p.status = make(0, L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE | SS_ENDELLIPSIS, kIdStatus);
-	p.action = make(0, L"BUTTON", pane == kLocal ? L"Upload  \x2192" : L"\x2190  Download",
+	p.action = make(0, L"BUTTON", pane == kLocal ? Tr(L"Upload  \x2192") : Tr(L"\x2190  Download"),
 		WS_TABSTOP | BS_PUSHBUTTON, kIdAction);
 
 	ListView_SetExtendedListViewStyle(p.list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_HEADERDRAGDROP);
@@ -343,8 +346,8 @@ void FileManagerWindow::CreatePane(Pane& p)
 	if (m_smallIcons)
 		ListView_SetImageList(p.list, m_smallIcons, LVSIL_SMALL);
 	const struct { const wchar_t* name; int width; int fmt; } cols[] = {
-		{ L"Name", 230, LVCFMT_LEFT }, { L"Size", 80, LVCFMT_RIGHT }, { L"Type", 110, LVCFMT_LEFT },
-		{ L"Modified", 125, LVCFMT_LEFT },
+		{ Tr(L"Name"), 230, LVCFMT_LEFT }, { Tr(L"Size"), 80, LVCFMT_RIGHT }, { Tr(L"Type"), 110, LVCFMT_LEFT },
+		{ Tr(L"Modified"), 125, LVCFMT_LEFT },
 	};
 	for (int i = 0; i < 4; ++i) {
 		LVCOLUMNW col = {};
@@ -364,12 +367,12 @@ void FileManagerWindow::CreatePane(Pane& p)
 		ti.lpszText = const_cast<wchar_t*>(text);
 		SendMessageW(m_tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
 	};
-	tip(p.btnUp, L"Up one level (Backspace)");
-	tip(p.btnRefresh, L"Refresh (F5)");
-	tip(p.btnNew, L"New folder (F7)");
-	tip(p.btnDelete, L"Delete (Del)");
-	tip(p.action, pane == kLocal ? L"Copy the selected items to the remote computer"
-	                             : L"Copy the selected items to this computer");
+	tip(p.btnUp, Tr(L"Up one level (Backspace)"));
+	tip(p.btnRefresh, Tr(L"Refresh (F5)"));
+	tip(p.btnNew, Tr(L"New folder (F7)"));
+	tip(p.btnDelete, Tr(L"Delete (Del)"));
+	tip(p.action, pane == kLocal ? Tr(L"Copy the selected items to the remote computer")
+	                             : Tr(L"Copy the selected items to this computer"));
 
 	if (m_ole) {
 		const int index = pane;
@@ -684,8 +687,8 @@ LRESULT FileManagerWindow::Handle(UINT msg, WPARAM wp, LPARAM lp)
 				SetItems(p, {}, std::string());
 			} else {
 				// Stay where we were; tell why.
-				MessageBoxW(m_hwnd, (L"Cannot open " + W(res->path) + L"\n\n" + W(p.error)).c_str(),
-					L"UltraVNC File Transfer", MB_OK | MB_ICONWARNING);
+				MessageBoxW(m_hwnd, TrF(L"Cannot open %ls\n\n%ls", W(res->path).c_str(), W(p.error).c_str()).c_str(),
+					Tr(L"UltraVNC File Transfer"), MB_OK | MB_ICONWARNING);
 				SetWindowTextW(p.address, W(p.path).c_str());
 				p.error.clear();
 				UpdatePaneStatus(p);
@@ -722,8 +725,8 @@ LRESULT FileManagerWindow::Handle(UINT msg, WPARAM wp, LPARAM lp)
 			// Say why the remote side stays empty (e.g. nobody logged on).
 			p.error = res->result.Describe();
 			UpdatePaneStatus(p);
-			MessageBoxW(m_hwnd, (L"The remote files cannot be shown.\n\n" + W(p.error)).c_str(),
-				L"UltraVNC File Transfer", MB_OK | MB_ICONWARNING);
+			MessageBoxW(m_hwnd, TrF(L"The remote files cannot be shown.\n\n%ls", W(p.error).c_str()).c_str(),
+				Tr(L"UltraVNC File Transfer"), MB_OK | MB_ICONWARNING);
 			return 0;
 		}
 		p.error.clear();
@@ -735,10 +738,11 @@ LRESULT FileManagerWindow::Handle(UINT msg, WPARAM wp, LPARAM lp)
 			pl.free = r.freeBytes;
 			pl.drive = r.type != kRootFolder;
 			if (r.type == kRootFolder) {
-				pl.label = W(r.label);
+				const std::wstring label = W(r.label); // "Desktop", "Documents", ... from the server
+				pl.label = Tr(label.c_str());
 			} else {
-				std::wstring kind = r.type == kRootNetwork ? L"Network drive" : r.type == kRootRemovable ? L"Removable disk"
-					: r.type == kRootCdrom ? L"CD/DVD drive" : L"Local disk";
+				std::wstring kind = r.type == kRootNetwork ? Tr(L"Network drive") : r.type == kRootRemovable ? Tr(L"Removable disk")
+					: r.type == kRootCdrom ? Tr(L"CD/DVD drive") : Tr(L"Local disk");
 				pl.label = (r.label.empty() ? kind : W(r.label)) + L" (" + W(r.path.substr(0, 2)) + L")";
 			}
 			p.places_.push_back(pl);
@@ -748,7 +752,7 @@ LRESULT FileManagerWindow::Handle(UINT msg, WPARAM wp, LPARAM lp)
 			std::string start = m_initialRemoteDir;
 			if (start.empty()) {
 				for (const Place& pl : p.places_)
-					if (!pl.drive && pl.label == L"Desktop")
+					if (!pl.drive && pl.label == Tr(L"Desktop"))
 						start = pl.path;
 				if (start.empty() && !p.places_.empty())
 					start = p.places_.front().path;
@@ -764,21 +768,21 @@ LRESULT FileManagerWindow::Handle(UINT msg, WPARAM wp, LPARAM lp)
 		std::unique_ptr<OpResult> res(reinterpret_cast<OpResult*>(lp));
 		Pane& p = m_panes[kRemote];
 		if (!res->result.Ok()) {
-			const wchar_t* what = res->kind == OpResult::kMkDir ? L"Cannot create the folder"
-				: res->kind == OpResult::kRename ? L"Cannot rename" : L"Cannot delete";
+			const wchar_t* what = res->kind == OpResult::kMkDir ? Tr(L"Cannot create the folder")
+				: res->kind == OpResult::kRename ? Tr(L"Cannot rename") : Tr(L"Cannot delete");
 			if (res->kind == OpResult::kDelete) {
 				m_remoteOpErrors += U(res->name) + ": " + res->result.Describe() + "\n";
 			} else {
 				MessageBoxW(m_hwnd, (std::wstring(what) + L" \x201C" + res->name + L"\x201D.\n\n" +
-					W(res->result.Describe())).c_str(), L"UltraVNC File Transfer", MB_OK | MB_ICONWARNING);
+					W(res->result.Describe())).c_str(), Tr(L"UltraVNC File Transfer"), MB_OK | MB_ICONWARNING);
 			}
 		}
 		if (res->kind == OpResult::kDelete) {
 			if (--m_pendingRemoteOps > 0)
 				return 0;
 			if (!m_remoteOpErrors.empty()) {
-				MessageBoxW(m_hwnd, (L"Some items could not be deleted:\n\n" + W(m_remoteOpErrors)).c_str(),
-					L"UltraVNC File Transfer", MB_OK | MB_ICONWARNING);
+				MessageBoxW(m_hwnd, TrF(L"Some items could not be deleted:\n\n%ls", W(m_remoteOpErrors).c_str()).c_str(),
+					Tr(L"UltraVNC File Transfer"), MB_OK | MB_ICONWARNING);
 				m_remoteOpErrors.clear();
 			}
 			Refresh(p);
@@ -792,8 +796,8 @@ LRESULT FileManagerWindow::Handle(UINT msg, WPARAM wp, LPARAM lp)
 	}
 	case WM_CLOSE:
 		if (!m_closing && m_queue && m_queue->Busy()) {
-			if (MessageBoxW(m_hwnd, L"Files are still being transferred.\n\nStop the transfers and close?",
-				    L"UltraVNC File Transfer", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
+			if (MessageBoxW(m_hwnd, Tr(L"Files are still being transferred.\n\nStop the transfers and close?"),
+				    Tr(L"UltraVNC File Transfer"), MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES)
 				return 0;
 		}
 		m_closing = true;
@@ -925,7 +929,7 @@ LRESULT FileManagerWindow::OnNotify(NMHDR* hdr)
 				if (t.totalBytes || t.state == ItemState::Done)
 					text = FormatSize(t.totalBytes);
 				if (t.directory && t.files)
-					text += L", " + std::to_wstring(t.files) + L" files";
+					text += TrF(L", %u files", static_cast<unsigned>(t.files));
 				break;
 			case 3:
 				if (t.state == ItemState::Running && speed > 0)
@@ -937,31 +941,32 @@ LRESULT FileManagerWindow::OnNotify(NMHDR* hdr)
 				break;
 			case 5:
 				switch (t.state) {
-				case ItemState::Queued: text = L"Waiting"; break;
+				case ItemState::Queued: text = Tr(L"Waiting"); break;
 				case ItemState::Running:
-					text = t.totalBytes == 0 && t.directory && t.files == 0 ? L"Scanning\x2026"
-						: (t.currentFile.empty() ? L"Transferring" : W(t.currentFile));
+					text = t.totalBytes == 0 && t.directory && t.files == 0 ? std::wstring(Tr(L"Scanning\x2026"))
+						: (t.currentFile.empty() ? std::wstring(Tr(L"Transferring")) : W(t.currentFile));
 					break;
 				case ItemState::Done: {
-					text = L"Done";
+					text = Tr(L"Done");
 					std::wstring notes;
 					if (t.filesSkipped)
-						notes = std::to_wstring(t.filesSkipped) + L" skipped";
+						notes = TrF(L"%u skipped", static_cast<unsigned>(t.filesSkipped));
 					if (t.filesIdentical)
-						notes += (notes.empty() ? L"" : L", ") + std::to_wstring(t.filesIdentical) + L" already there";
+						notes += (notes.empty() ? L"" : L", ") + TrF(L"%u already there", static_cast<unsigned>(t.filesIdentical));
 					if (!notes.empty())
 						text += L" (" + notes + L")";
 					break;
 				}
 				case ItemState::Failed:
 					if (t.interrupted && !m_connected)
-						text = L"Interrupted \x2014 continues when the connection is back";
+						text = Tr(L"Interrupted \x2014 continues when the connection is back");
 					else if (t.interrupted)
-						text = L"Interrupted: " + W(t.lastError) + L" (Retry continues where it stopped)";
+						text = TrF(L"Interrupted: %ls (Retry continues where it stopped)", W(t.lastError).c_str());
 					else
-						text = t.errors ? std::to_wstring(t.errors) + L" failed: " + W(t.lastError) : L"Failed: " + W(t.lastError);
+						text = t.errors ? TrF(L"%u failed: %ls", static_cast<unsigned>(t.errors), W(t.lastError).c_str())
+						                : TrF(L"Failed: %ls", W(t.lastError).c_str());
 					break;
-				case ItemState::Cancelled: text = L"Cancelled"; break;
+				case ItemState::Cancelled: text = Tr(L"Cancelled"); break;
 				}
 				break;
 			}
@@ -1144,7 +1149,7 @@ void FileManagerWindow::OpenItem(Pane& p, int index)
 void FileManagerWindow::LoadLocal(Pane& p, const std::string& path, const std::wstring& select)
 {
 	if (!IsAcceptablePath(path)) {
-		MessageBoxW(m_hwnd, (L"\x201C" + W(path) + L"\x201D is not a folder path.").c_str(), L"UltraVNC File Transfer",
+		MessageBoxW(m_hwnd, (L"\x201C" + W(path) + L"\x201D is not a folder path.").c_str(), Tr(L"UltraVNC File Transfer"),
 			MB_OK | MB_ICONWARNING);
 		SetWindowTextW(p.address, W(p.path).c_str());
 		return;
@@ -1158,8 +1163,8 @@ void FileManagerWindow::LoadLocal(Pane& p, const std::string& path, const std::w
 	if (find == INVALID_HANDLE_VALUE) {
 		const DWORD e = GetLastError();
 		if (e != ERROR_FILE_NOT_FOUND) {
-			MessageBoxW(m_hwnd, (L"Cannot open " + W(path) + L"\n\n" + W(Win32Message(e))).c_str(),
-				L"UltraVNC File Transfer", MB_OK | MB_ICONWARNING);
+			MessageBoxW(m_hwnd, TrF(L"Cannot open %ls\n\n%ls", W(path).c_str(), W(Win32Message(e)).c_str()).c_str(),
+				Tr(L"UltraVNC File Transfer"), MB_OK | MB_ICONWARNING);
 			SetWindowTextW(p.address, W(p.path).c_str());
 			return;
 		}
@@ -1189,7 +1194,7 @@ void FileManagerWindow::RequestRemote(Pane& p, const std::string& path, const st
 	if (!m_connected)
 		return;
 	if (!IsAcceptablePath(path)) {
-		MessageBoxW(m_hwnd, (L"\x201C" + W(path) + L"\x201D is not a folder path.").c_str(), L"UltraVNC File Transfer",
+		MessageBoxW(m_hwnd, (L"\x201C" + W(path) + L"\x201D is not a folder path.").c_str(), Tr(L"UltraVNC File Transfer"),
 			MB_OK | MB_ICONWARNING);
 		SetWindowTextW(p.address, W(p.path).c_str());
 		return;
@@ -1223,6 +1228,12 @@ void FileManagerWindow::RequestRemoteRoots()
 
 void FileManagerWindow::SetItems(Pane& p, std::vector<Item>&& items, const std::string& path)
 {
+	// Partial transfers kept for resuming ("~uvnc-*.part") are ours, not the
+	// user's: don't list them.
+	items.erase(std::remove_if(items.begin(), items.end(), [](const Item& it) {
+		return !it.dir && it.name.size() > 11 && it.name.compare(0, 6, L"~uvnc-") == 0 &&
+			it.name.compare(it.name.size() - 5, 5, L".part") == 0;
+	}), items.end());
 	// Icons and type names, cached per extension.
 	for (Item& it : items) {
 		std::wstring key = it.dir ? L"<dir>" : std::wstring(PathFindExtensionW(it.name.c_str()));
@@ -1335,9 +1346,9 @@ void FileManagerWindow::UpdatePaneStatus(Pane& p)
 {
 	std::wstring text;
 	if (p.id == kRemote && !m_connected) {
-		text = L"Not connected";
+		text = Tr(L"Not connected");
 	} else if (p.loading) {
-		text = L"Loading\x2026";
+		text = Tr(L"Loading\x2026");
 	} else if (!p.error.empty()) {
 		text = W(p.error);
 	} else {
@@ -1347,19 +1358,19 @@ void FileManagerWindow::UpdatePaneStatus(Pane& p)
 				continue;
 			(it.dir ? dirs : files)++;
 		}
-		text = std::to_wstring(dirs) + L" folders, " + std::to_wstring(files) + L" files";
+		text = TrF(L"%u folders, %u files", static_cast<unsigned>(dirs), static_cast<unsigned>(files));
 		const auto sel = Selected(p);
 		if (!sel.empty()) {
 			uint64_t bytes = 0;
 			for (int i : sel)
 				bytes += p.items[static_cast<size_t>(i)].size;
-			text += L"  \x2022  " + std::to_wstring(sel.size()) + L" selected (" + FormatSize(bytes) + L")";
+			text += L"  \x2022  " + TrF(L"%u selected (%ls)", static_cast<unsigned>(sel.size()), FormatSize(bytes).c_str());
 		}
 		// Free space of the drive we are on.
 		for (const Place& pl : p.places_) {
 			if (pl.drive && pl.total && p.path.size() >= 2 && pl.path.size() >= 2 &&
 			    CompareStringOrdinal(W(pl.path.substr(0, 2)).c_str(), 2, W(p.path.substr(0, 2)).c_str(), 2, TRUE) == CSTR_EQUAL) {
-				text += L"  \x2022  " + FormatSize(pl.free) + L" free";
+				text += L"  \x2022  " + TrF(L"%ls free", FormatSize(pl.free).c_str());
 				break;
 			}
 		}
@@ -1389,8 +1400,8 @@ void FileManagerWindow::FillLocalPlaces(Pane& p)
 {
 	p.places_.clear();
 	const struct { const KNOWNFOLDERID* id; const wchar_t* label; } folders[] = {
-		{ &FOLDERID_Desktop, L"Desktop" }, { &FOLDERID_Documents, L"Documents" }, { &FOLDERID_Downloads, L"Downloads" },
-		{ &FOLDERID_Profile, L"Home" },
+		{ &FOLDERID_Desktop, Tr(L"Desktop") }, { &FOLDERID_Documents, Tr(L"Documents") }, { &FOLDERID_Downloads, Tr(L"Downloads") },
+		{ &FOLDERID_Profile, Tr(L"Home") },
 	};
 	for (const auto& f : folders) {
 		Place pl;
@@ -1423,8 +1434,8 @@ void FileManagerWindow::FillLocalPlaces(Pane& p)
 			}
 			SetErrorMode(oldMode);
 		}
-		const wchar_t* kind = type == DRIVE_REMOTE ? L"Network drive" : type == DRIVE_REMOVABLE ? L"Removable disk"
-			: type == DRIVE_CDROM ? L"CD/DVD drive" : L"Local disk";
+		const wchar_t* kind = type == DRIVE_REMOTE ? Tr(L"Network drive") : type == DRIVE_REMOVABLE ? Tr(L"Removable disk")
+			: type == DRIVE_CDROM ? Tr(L"CD/DVD drive") : Tr(L"Local disk");
 		pl.label = (label.empty() ? std::wstring(kind) : label) + L" (" + std::wstring(root, 2) + L")";
 		p.places_.push_back(pl);
 	}
@@ -1523,14 +1534,14 @@ void FileManagerWindow::DeleteSelected(Pane& p)
 	std::wstring question;
 	if (sel.size() == 1) {
 		const Item& it = p.items[static_cast<size_t>(sel[0])];
-		question = (it.dir ? L"Delete the folder \x201C" : L"Delete \x201C") + it.name + L"\x201D" +
-			(it.dir ? L" and everything in it?" : L"?");
+		question = it.dir ? TrF(L"Delete the folder \x201C%ls\x201D and everything in it?", it.name.c_str())
+		                  : TrF(L"Delete \x201C%ls\x201D?", it.name.c_str());
 	} else {
-		question = L"Delete these " + std::to_wstring(sel.size()) + L" items?";
+		question = TrF(L"Delete these %u items?", static_cast<unsigned>(sel.size()));
 	}
-	question += p.id == kRemote ? L"\n\nThey are deleted on the remote computer and cannot be restored."
-	                            : L"\n\nThey are moved to the recycle bin.";
-	if (MessageBoxW(m_hwnd, question.c_str(), L"UltraVNC File Transfer", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+	question += p.id == kRemote ? Tr(L"\n\nThey are deleted on the remote computer and cannot be restored.")
+	                            : Tr(L"\n\nThey are moved to the recycle bin.");
+	if (MessageBoxW(m_hwnd, question.c_str(), Tr(L"UltraVNC File Transfer"), MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
 		return;
 	if (p.id == kLocal) {
 		std::wstring from;
@@ -1564,7 +1575,7 @@ void FileManagerWindow::NewFolder(Pane& p)
 {
 	if (p.path.empty() || (p.id == kRemote && !m_connected))
 		return;
-	std::wstring name = L"New folder";
+	std::wstring name = Tr(L"New folder");
 	for (int n = 2;; ++n) {
 		bool taken = false;
 		for (const Item& it : p.items)
@@ -1572,13 +1583,13 @@ void FileManagerWindow::NewFolder(Pane& p)
 				taken = true;
 		if (!taken)
 			break;
-		name = L"New folder (" + std::to_wstring(n) + L")";
+		name = TrF(L"New folder (%d)", n);
 	}
 	const std::string path = JoinPath(p.path, U(name));
 	if (p.id == kLocal) {
 		if (!CreateDirectoryW(LocalPath(path).c_str(), NULL)) {
-			MessageBoxW(m_hwnd, (L"Cannot create the folder.\n\n" + W(Win32Message(GetLastError()))).c_str(),
-				L"UltraVNC File Transfer", MB_OK | MB_ICONWARNING);
+			MessageBoxW(m_hwnd, TrF(L"Cannot create the folder.\n\n%ls", W(Win32Message(GetLastError())).c_str()).c_str(),
+				Tr(L"UltraVNC File Transfer"), MB_OK | MB_ICONWARNING);
 			return;
 		}
 		p.editAfterLoad = true;
@@ -1610,16 +1621,16 @@ void FileManagerWindow::FinishRename(Pane& p, int index, const std::wstring& new
 	if (newName == it.name)
 		return;
 	if (!IsValidName(U(newName))) {
-		MessageBoxW(m_hwnd, L"A name cannot be empty, end with a dot or space, or contain any of these characters:\n\n"
-			L"\\ / : * ? \" < > |", L"UltraVNC File Transfer", MB_OK | MB_ICONWARNING);
+		MessageBoxW(m_hwnd, Tr(L"A name cannot be empty, end with a dot or space, or contain any of these characters:\n\n"
+			L"\\ / : * ? \" < > |"), Tr(L"UltraVNC File Transfer"), MB_OK | MB_ICONWARNING);
 		return;
 	}
 	const std::string from = JoinPath(p.path, U(it.name));
 	const std::string to = JoinPath(p.path, U(newName));
 	if (p.id == kLocal) {
 		if (!MoveFileW(LocalPath(from).c_str(), LocalPath(to).c_str())) {
-			MessageBoxW(m_hwnd, (L"Cannot rename \x201C" + it.name + L"\x201D.\n\n" + W(Win32Message(GetLastError()))).c_str(),
-				L"UltraVNC File Transfer", MB_OK | MB_ICONWARNING);
+			MessageBoxW(m_hwnd, TrF(L"Cannot rename \x201C%ls\x201D.\n\n%ls", it.name.c_str(), W(Win32Message(GetLastError())).c_str()).c_str(),
+				Tr(L"UltraVNC File Transfer"), MB_OK | MB_ICONWARNING);
 			return;
 		}
 		Navigate(p, p.path, newName);
@@ -1668,16 +1679,16 @@ void FileManagerWindow::ContextMenu(Pane& p, POINT screen)
 	if (sel.size() == 1)
 		singleDir = p.items[static_cast<size_t>(sel[0])].dir;
 	if (singleDir)
-		add(kMenuOpen, L"&Open\tEnter", true);
-	add(kMenuTransfer, p.id == kLocal ? L"&Upload to the remote computer" : L"&Download to this computer",
+		add(kMenuOpen, Tr(L"&Open\tEnter"), true);
+	add(kMenuTransfer, p.id == kLocal ? Tr(L"&Upload to the remote computer") : Tr(L"&Download to this computer"),
 		otherReady && !sel.empty());
 	AppendMenuW(menu, MF_SEPARATOR, 0, NULL);
-	add(kMenuRename, L"Re&name\tF2", ready && sel.size() == 1);
-	add(kMenuDelete, L"&Delete\tDel", ready && !sel.empty());
+	add(kMenuRename, Tr(L"Re&name\tF2"), ready && sel.size() == 1);
+	add(kMenuDelete, Tr(L"&Delete\tDel"), ready && !sel.empty());
 	AppendMenuW(menu, MF_SEPARATOR, 0, NULL);
-	add(kMenuNewFolder, L"New &folder\tF7", ready && !p.path.empty());
-	add(kMenuRefresh, L"&Refresh\tF5", ready);
-	add(kMenuCopyPath, L"Copy &path", !p.path.empty());
+	add(kMenuNewFolder, Tr(L"New &folder\tF7"), ready && !p.path.empty());
+	add(kMenuRefresh, Tr(L"&Refresh\tF5"), ready);
+	add(kMenuCopyPath, Tr(L"Copy &path"), !p.path.empty());
 	if (singleDir)
 		SetMenuDefaultItem(menu, kMenuOpen, FALSE);
 	const int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, 0, m_hwnd, NULL);
@@ -1840,11 +1851,11 @@ void FileManagerWindow::RefreshQueue()
 	}
 	std::wstring text;
 	if (running || waiting) {
-		text = std::to_wstring(running + waiting) + L" active";
+		text = TrF(L"%u active", static_cast<unsigned>(running + waiting));
 		if (total)
-			text += L"  \x2022  " + FormatSize(done) + L" of " + FormatSize(total);
+			text += L"  \x2022  " + TrF(L"%ls of %ls", FormatSize(done).c_str(), FormatSize(total).c_str());
 	} else if (!m_queueItems.empty()) {
-		text = L"All transfers finished";
+		text = Tr(L"All transfers finished");
 	}
 	SetWindowTextW(m_queueSummary, text.c_str());
 	EnableWindow(m_btnCancel, running + waiting > 0);
@@ -1912,28 +1923,29 @@ ConflictChoice FileManagerWindow::AskConflict(const Conflict& c, bool& applyToAl
 {
 	const std::wstring name = W(FileNamePart(c.targetPath));
 	const std::wstring where = W(ParentPath(c.targetPath));
-	const std::wstring instruction = L"\x201C" + name + L"\x201D already exists";
-	const std::wstring content = std::wstring(c.direction == Direction::Upload ? L"On the remote computer, in " : L"In ") +
-		where + L"\n\nCopying:\t" + FormatSize(c.sourceSize) + L", " + FormatTime(c.sourceTime) + L"\nExisting:\t" +
-		FormatSize(c.targetSize) + L", " + FormatTime(c.targetTime) +
-		(c.sourceTime && c.targetTime ? (c.sourceTime > c.targetTime ? L"  (older)" : c.sourceTime < c.targetTime ? L"  (newer)" : L"")
+	const std::wstring instruction = TrF(L"\x201C%ls\x201D already exists", name.c_str());
+	const std::wstring content = (c.direction == Direction::Upload ? TrF(L"On the remote computer, in %ls", where.c_str())
+	                                                               : TrF(L"In %ls", where.c_str())) +
+		L"\n\n" + Tr(L"Copying:") + L"\t" + FormatSize(c.sourceSize) + L", " + FormatTime(c.sourceTime) + L"\n" +
+		Tr(L"Existing:") + L"\t" + FormatSize(c.targetSize) + L", " + FormatTime(c.targetTime) +
+		(c.sourceTime && c.targetTime ? (c.sourceTime > c.targetTime ? Tr(L"  (older)") : c.sourceTime < c.targetTime ? Tr(L"  (newer)") : L"")
 		                              : L"");
 	const TASKDIALOG_BUTTON buttons[] = {
-		{ 100, L"&Replace the file" }, { 101, L"&Skip this file" }, { 102, L"&Keep both (rename the new one)" },
+		{ 100, Tr(L"&Replace the file") }, { 101, Tr(L"&Skip this file") }, { 102, Tr(L"&Keep both (rename the new one)") },
 	};
 	TASKDIALOGCONFIG tdc = {};
 	tdc.cbSize = sizeof(tdc);
 	tdc.hwndParent = m_hwnd;
 	tdc.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
 	tdc.dwCommonButtons = TDCBF_CANCEL_BUTTON;
-	tdc.pszWindowTitle = L"UltraVNC File Transfer";
+	tdc.pszWindowTitle = Tr(L"UltraVNC File Transfer");
 	tdc.pszMainIcon = TD_WARNING_ICON;
 	tdc.pszMainInstruction = instruction.c_str();
 	tdc.pszContent = content.c_str();
 	tdc.cButtons = 3;
 	tdc.pButtons = buttons;
 	tdc.nDefaultButton = 100;
-	tdc.pszVerificationText = L"Do this for &all remaining conflicts";
+	tdc.pszVerificationText = Tr(L"Do this for &all remaining conflicts");
 	int button = IDCANCEL;
 	BOOL all = FALSE;
 	if (FAILED(TaskDialogIndirect(&tdc, &button, NULL, &all)))
