@@ -45,7 +45,7 @@ enum : UINT {
 enum : int {
 	kIdTitle = 1, kIdPlaces, kIdAddress, kIdList, kIdStatus, kIdAction, kIdUp, kIdRefresh, kIdNew, kIdDelete,
 	kPaneBase = 1000,     // + pane * 100 + id
-	kIdQueueList = 1301, kIdQueueCancel, kIdQueueClear, kIdQueueTitle, kIdQueueSummary,
+	kIdQueueList = 1301, kIdQueueCancel, kIdQueueClear, kIdQueueTitle, kIdQueueSummary, kIdQueueRetry,
 	kMenuOpen = 2001, kMenuTransfer, kMenuRename, kMenuDelete, kMenuNewFolder, kMenuRefresh, kMenuCopyPath,
 	kTimerQueue = 1,
 };
@@ -289,6 +289,8 @@ void FileManagerWindow::CreateChildren()
 		SS_ENDELLIPSIS, 0, 0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdQueueSummary)), inst, NULL);
 	m_btnCancel = CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 		0, 0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdQueueCancel)), inst, NULL);
+	m_btnRetry = CreateWindowExW(0, L"BUTTON", L"Retry", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+		0, 0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdQueueRetry)), inst, NULL);
 	m_btnClear = CreateWindowExW(0, L"BUTTON", L"Clear finished", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 		0, 0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdQueueClear)), inst, NULL);
 	m_queueList = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP |
@@ -409,7 +411,7 @@ void FileManagerWindow::ApplyFonts()
 			set(h, m_iconFont);
 	}
 	set(m_queueTitle, m_boldFont);
-	for (HWND h : { m_queueSummary, m_queueList, m_btnCancel, m_btnClear })
+	for (HWND h : { m_queueSummary, m_queueList, m_btnCancel, m_btnRetry, m_btnClear })
 		set(h, m_font);
 	set(m_tooltip, m_font);
 }
@@ -462,8 +464,9 @@ void FileManagerWindow::Layout()
 	int y = splitY + gap;
 	const int qbw = Scale(110);
 	put(m_queueTitle, m, y, Scale(90), rowH);
-	put(m_queueSummary, m + Scale(94), y, W - 2 * m - Scale(94) - 2 * qbw - Scale(8), rowH);
-	put(m_btnCancel, W - m - 2 * qbw - Scale(4), y, qbw, rowH);
+	put(m_queueSummary, m + Scale(94), y, W - 2 * m - Scale(94) - 3 * qbw - Scale(12), rowH);
+	put(m_btnCancel, W - m - 3 * qbw - Scale(8), y, qbw, rowH);
+	put(m_btnRetry, W - m - 2 * qbw - Scale(4), y, qbw, rowH);
 	put(m_btnClear, W - m - qbw, y, qbw, rowH);
 	y += rowH + Scale(4);
 	put(m_queueList, m, y, W - 2 * m, H - m - y);
@@ -855,6 +858,10 @@ void FileManagerWindow::OnCommand(int id, int code, HWND ctl)
 		m_queue->ClearFinished();
 		return;
 	}
+	if (id == kIdQueueRetry) {
+		m_queue->Retry(false);
+		return;
+	}
 	Pane* pp = PaneOf(ctl);
 	if (!pp)
 		return;
@@ -930,13 +937,24 @@ LRESULT FileManagerWindow::OnNotify(NMHDR* hdr)
 					text = t.totalBytes == 0 && t.directory && t.files == 0 ? L"Scanning\x2026"
 						: (t.currentFile.empty() ? L"Transferring" : W(t.currentFile));
 					break;
-				case ItemState::Done:
+				case ItemState::Done: {
 					text = L"Done";
+					std::wstring notes;
 					if (t.filesSkipped)
-						text += L" (" + std::to_wstring(t.filesSkipped) + L" skipped)";
+						notes = std::to_wstring(t.filesSkipped) + L" skipped";
+					if (t.filesIdentical)
+						notes += (notes.empty() ? L"" : L", ") + std::to_wstring(t.filesIdentical) + L" already there";
+					if (!notes.empty())
+						text += L" (" + notes + L")";
 					break;
+				}
 				case ItemState::Failed:
-					text = t.errors ? std::to_wstring(t.errors) + L" failed: " + W(t.lastError) : L"Failed: " + W(t.lastError);
+					if (t.interrupted && !m_connected)
+						text = L"Interrupted \x2014 continues when the connection is back";
+					else if (t.interrupted)
+						text = L"Interrupted: " + W(t.lastError) + L" (Retry continues where it stopped)";
+					else
+						text = t.errors ? std::to_wstring(t.errors) + L" failed: " + W(t.lastError) : L"Failed: " + W(t.lastError);
 					break;
 				case ItemState::Cancelled: text = L"Cancelled"; break;
 				}
@@ -1449,6 +1467,9 @@ void FileManagerWindow::SetConnected(bool connected)
 		p.items.clear();
 		ListView_SetItemCountEx(p.list, 0, 0);
 		RequestRemoteRoots();
+		// Transfers cut off by the drop continue where they stopped.
+		if (m_queue)
+			m_queue->Retry(true);
 	} else {
 		++p.loadSeq;
 		p.loading = false;
@@ -1457,6 +1478,8 @@ void FileManagerWindow::SetConnected(bool connected)
 	}
 	UpdatePaneStatus(p);
 	UpdateButtons();
+	if (m_queue)
+		RefreshQueue(); // status texts and Retry depend on the connection
 }
 
 // --- operations -------------------------------------------------------------------
@@ -1809,6 +1832,10 @@ void FileManagerWindow::RefreshQueue()
 	}
 	SetWindowTextW(m_queueSummary, text.c_str());
 	EnableWindow(m_btnCancel, running + waiting > 0);
+	bool anyFailed = false;
+	for (const auto& t : m_queueItems)
+		anyFailed = anyFailed || t.state == ItemState::Failed;
+	EnableWindow(m_btnRetry, anyFailed && m_connected);
 	EnableWindow(m_btnClear, m_queueItems.size() > running + waiting);
 }
 

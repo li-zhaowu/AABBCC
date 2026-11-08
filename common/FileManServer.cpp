@@ -88,6 +88,23 @@ uint32_t AttributesToWire(DWORD a)
 	return static_cast<uint32_t>(a) & kAttrMask;
 }
 
+void PurgeOldPartFiles(const std::wstring& folder)
+{
+	WIN32_FIND_DATAW fd;
+	HANDLE find = FindFirstFileW((folder + L"~uvnc-*.part").c_str(), &fd);
+	if (find == INVALID_HANDLE_VALUE)
+		return;
+	FILETIME nowFt;
+	GetSystemTimeAsFileTime(&nowFt);
+	const uint64_t now = FileTimeToU64(nowFt);
+	const uint64_t week = 7ULL * 24 * 3600 * 10000000ULL;
+	do {
+		if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && now - FileTimeToU64(fd.ftLastWriteTime) > week)
+			DeleteFileW((folder + fd.cFileName).c_str());
+	} while (FindNextFileW(find, &fd));
+	FindClose(find);
+}
+
 namespace {
 
 // Impersonates for the lifetime of the object (if a token is given).
@@ -712,20 +729,55 @@ void FileManServer::DoOpenWrite(const OpenWriteRequest& r)
 	std::wstring parentW = LongPath(parent);
 	if (parentW.back() != L'\\')
 		parentW += L'\\';
+	// Hidden temporary file in the same folder (same volume: the final
+	// rename is atomic). Resumable: named after the target, size and time.
+	const bool resumable = (r.flags & kWriteResume) != 0;
+	const std::wstring temp = resumable ? parentW + Utf8ToWide(ResumeTempName(r.path, r.size, r.mtime))
+		: parentW + L"~uvnc-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(++m_tempCounter) + L".part";
+	if (resumable) {
+		// A retry while the earlier attempt is still open (e.g. after a
+		// timeout): close that one, keeping its data.
+		for (auto it = m_open.begin(); it != m_open.end(); ++it) {
+			if (it->second.write && _wcsicmp(it->second.temp.c_str(), temp.c_str()) == 0) {
+				CloseHandle(it->second.handle);
+				m_open.erase(it);
+				break;
+			}
+		}
+	}
+	// Continue a partial upload of the same file version.
+	uint64_t offset = 0;
+	HANDLE h = INVALID_HANDLE_VALUE;
+	if (resumable) {
+		h = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+		LARGE_INTEGER existing;
+		if (h != INVALID_HANDLE_VALUE) {
+			LARGE_INTEGER zero = {};
+			if (GetFileSizeEx(h, &existing) && static_cast<uint64_t>(existing.QuadPart) <= r.size &&
+			    SetFilePointerEx(h, zero, NULL, FILE_END)) {
+				offset = static_cast<uint64_t>(existing.QuadPart);
+			} else {
+				CloseHandle(h); // bigger than the file: not ours to continue
+				h = INVALID_HANDLE_VALUE;
+			}
+		}
+	}
 	ULARGE_INTEGER freeToUser;
-	if (GetDiskFreeSpaceExW(parentW.c_str(), &freeToUser, NULL, NULL) && freeToUser.QuadPart < r.size) {
+	if (GetDiskFreeSpaceExW(parentW.c_str(), &freeToUser, NULL, NULL) && freeToUser.QuadPart < r.size - offset) {
+		if (h != INVALID_HANDLE_VALUE)
+			CloseHandle(h);
 		Reply(r.reqId, kErrDiskFull, {}, Win32Message(ERROR_DISK_FULL));
 		return;
 	}
-	// Hidden temporary file in the same folder (same volume: the final
-	// rename is atomic).
-	const std::wstring temp = parentW + L"~uvnc-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
-		std::to_wstring(++m_tempCounter) + L".part";
-	HANDLE h = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-		FILE_ATTRIBUTE_HIDDEN | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
 	if (h == INVALID_HANDLE_VALUE) {
-		ReplyError(r.reqId, GetLastError());
-		return;
+		if (resumable)
+			PurgeOldPartFiles(parentW);
+		h = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+			FILE_ATTRIBUTE_HIDDEN | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+		if (h == INVALID_HANDLE_VALUE) {
+			ReplyError(r.reqId, GetLastError());
+			return;
+		}
 	}
 	Open o;
 	o.handle = h;
@@ -733,10 +785,15 @@ void FileManServer::DoOpenWrite(const OpenWriteRequest& r)
 	o.target = target;
 	o.temp = temp;
 	o.overwrite = (r.flags & kWriteOverwrite) != 0;
+	o.resumable = resumable;
+	o.written = offset;
 	const uint32_t id = m_nextHandle++;
 	m_open[id] = o;
-	Log(1, "receiving " + r.path);
-	Reply(r.reqId, kOk, EncodeHandle(id));
+	Log(1, "receiving " + r.path + (offset ? " (continuing at byte " + std::to_string(offset) + ")" : ""));
+	OpenWriteReply rep;
+	rep.handle = id;
+	rep.offset = offset;
+	Reply(r.reqId, kOk, EncodeOpenWriteReply(rep));
 }
 
 void FileManServer::DoWrite(const WriteHeader& h, const uint8_t* bytes, size_t n)
@@ -810,7 +867,8 @@ void FileManServer::CloseAll()
 {
 	for (auto& kv : m_open) {
 		CloseHandle(kv.second.handle);
-		if (kv.second.write)
+		// Connection gone: a resumable upload keeps what it has so far.
+		if (kv.second.write && !kv.second.resumable)
 			DeleteFileW(kv.second.temp.c_str());
 	}
 	m_open.clear();

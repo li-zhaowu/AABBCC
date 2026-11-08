@@ -308,6 +308,7 @@ std::vector<uint8_t> EncodeOpenWrite(const OpenWriteRequest& q)
 	PutStr(v, q.path, kMaxPathBytes);
 	PutU64(v, q.size);
 	v.push_back(q.flags);
+	PutU64(v, q.mtime);
 	return v;
 }
 
@@ -318,6 +319,9 @@ bool DecodeOpenWrite(const uint8_t* p, size_t len, OpenWriteRequest& out)
 	out.path = r.Str(kMaxPathBytes);
 	out.size = r.U64();
 	out.flags = r.U8();
+	if (!r.End())
+		return false;
+	out.mtime = r.pos < len ? r.U64() : 0; // older viewers: no time
 	return r.End();
 }
 
@@ -486,18 +490,43 @@ bool DecodeOpenReadReply(const uint8_t* p, size_t len, OpenReadReply& out)
 	return r.End();
 }
 
-std::vector<uint8_t> EncodeHandle(uint32_t handle)
+std::vector<uint8_t> EncodeOpenWriteReply(const OpenWriteReply& o)
 {
 	std::vector<uint8_t> v;
-	PutU32(v, handle);
+	PutU32(v, o.handle);
+	PutU64(v, o.offset);
 	return v;
 }
 
-bool DecodeHandle(const uint8_t* p, size_t len, uint32_t& handle)
+bool DecodeOpenWriteReply(const uint8_t* p, size_t len, OpenWriteReply& out)
 {
 	Reader r(p, len);
-	handle = r.U32();
+	out.handle = r.U32();
+	if (!r.End())
+		return false;
+	out.offset = r.pos < len ? r.U64() : 0; // older servers: no offset
 	return r.End();
+}
+
+std::string ResumeTempName(const std::string& targetPath, uint64_t size, uint64_t mtime)
+{
+	// FNV-1a over the ASCII-lowercased path, the size and the time.
+	uint64_t h = 1469598103934665603ULL;
+	auto mix = [&](uint8_t b) {
+		h ^= b;
+		h *= 1099511628211ULL;
+	};
+	for (char c : targetPath)
+		mix(static_cast<uint8_t>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c));
+	for (int i = 0; i < 8; ++i)
+		mix(static_cast<uint8_t>(size >> (8 * i)));
+	for (int i = 0; i < 8; ++i)
+		mix(static_cast<uint8_t>(mtime >> (8 * i)));
+	static const char hex[] = "0123456789abcdef";
+	std::string name = "~uvnc-";
+	for (int i = 15; i >= 0; --i)
+		name += hex[(h >> (4 * i)) & 15];
+	return name + ".part";
 }
 
 std::vector<uint8_t> EncodeData(const DataHeader& h, const uint8_t* bytes, size_t n)

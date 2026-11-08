@@ -138,6 +138,39 @@ void FileTransferQueue::ClearFinished()
 	Notify();
 }
 
+size_t FileTransferQueue::Retry(bool interruptedOnly)
+{
+	size_t n = 0;
+	{
+		std::lock_guard<std::mutex> lk(m_mutex);
+		for (auto& item : m_items) {
+			TransferItem& t = item->info;
+			if (t.state != ItemState::Failed || (interruptedOnly && !t.interrupted))
+				continue;
+			const TransferItem fresh = [&] {
+				TransferItem f;
+				f.id = t.id;
+				f.direction = t.direction;
+				f.name = t.name;
+				f.source = t.source;
+				f.targetDir = t.targetDir;
+				f.directory = t.directory;
+				f.totalBytes = t.directory ? 0 : t.totalBytes;
+				f.files = t.directory ? 0 : 1;
+				return f;
+			}();
+			t = fresh;
+			item->cancel = false;
+			++n;
+		}
+	}
+	if (n) {
+		m_cond.notify_all();
+		Notify();
+	}
+	return n;
+}
+
 std::vector<TransferItem> FileTransferQueue::Snapshot() const
 {
 	std::lock_guard<std::mutex> lk(m_mutex);
@@ -213,8 +246,14 @@ void FileTransferQueue::Run(const std::shared_ptr<Item>& item)
 		if (!err.empty())
 			item->info.lastError = err;
 	};
+	auto markInterrupted = [&] {
+		std::lock_guard<std::mutex> lk(m_mutex);
+		item->info.interrupted = !m_client.Connected();
+	};
 	if (!Expand(item, files, error)) {
 		setState(item->cancel ? ItemState::Cancelled : ItemState::Failed, item->cancel ? std::string() : error);
+		if (!item->cancel)
+			markInterrupted();
 		return;
 	}
 	uint64_t total = 0;
@@ -235,7 +274,17 @@ void FileTransferQueue::Run(const std::shared_ptr<Item>& item)
 		std::string target = task.target;
 		bool overwrite = false;
 		Entry existing;
-		if (TargetExists(dir, target, existing)) {
+		const bool exists = TargetExists(dir, target, existing);
+		// Already there, same size and time (e.g. sent before an interrupted
+		// attempt): nothing to do, no question.
+		if (exists && !existing.IsDirectory() && existing.size == task.size && task.mtime &&
+		    existing.mtime == task.mtime) {
+			std::lock_guard<std::mutex> lk(m_mutex);
+			item->info.filesIdentical++;
+			item->info.doneBytes = (completed += task.size);
+			continue;
+		}
+		if (exists) {
 			ConflictChoice choice = ConflictChoice::Overwrite;
 			bool haveChoice = false;
 			{
@@ -309,6 +358,8 @@ void FileTransferQueue::Run(const std::shared_ptr<Item>& item)
 		}
 		if (r.status == kErrDisconnected || r.status == kErrTimeout) {
 			setState(ItemState::Failed, r.Describe());
+			std::lock_guard<std::mutex> lk(m_mutex);
+			item->info.interrupted = true;
 			return;
 		}
 	}
@@ -316,6 +367,8 @@ void FileTransferQueue::Run(const std::shared_ptr<Item>& item)
 		setState(ItemState::Cancelled, std::string());
 	else
 		setState(item->info.errors ? ItemState::Failed : ItemState::Done, std::string());
+	if (!item->cancel && item->info.errors)
+		markInterrupted();
 }
 
 bool FileTransferQueue::Expand(const std::shared_ptr<Item>& item, std::vector<FileTask>& files, std::string& error)

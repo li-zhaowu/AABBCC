@@ -366,6 +366,99 @@ static void TestTransfers()
 	CHECK(c.MkDirSync(JoinPath(g_base, "after")).status == kErrDisconnected);
 }
 
+static void DeleteTempFiles(const std::string& dir)
+{
+	WIN32_FIND_DATAW fd;
+	HANDLE f = FindFirstFileW(W(JoinPath(dir, "~uvnc-*.part")).c_str(), &fd);
+	if (f == INVALID_HANDLE_VALUE)
+		return;
+	do
+		DeleteFileW(W(JoinPath(dir, WideToUtf8(fd.cFileName))).c_str());
+	while (FindNextFileW(f, &fd));
+	FindClose(f);
+}
+
+// Transfers cut off by a dropped connection continue where they stopped.
+static void TestResume()
+{
+	const std::string up = JoinPath(g_base, "up");
+	const std::string down = JoinPath(g_base, "down");
+	const std::string local = JoinPath(down, "src.bin");
+	std::vector<uint8_t> want, got;
+	CHECK(ReadBytes(local, want) && want.size() > 3000000);
+	std::atomic<bool> noCancel{false};
+
+	// TestTransfers ended with an upload (src.bin -> lost.bin) cut off by a
+	// disconnect: the server kept what it had.
+	CHECK(CountTempFiles(up) == 1);
+	{
+		Rig rig;
+		uint64_t first = UINT64_MAX;
+		const Result r = rig.client->Upload(W(local), JoinPath(up, "lost.bin"), false,
+			[&](uint64_t d) { if (first == UINT64_MAX) first = d; }, noCancel);
+		CHECK(r.Ok());
+		std::printf("upload continued at byte %llu\n", (unsigned long long)first);
+		CHECK(first >= 400000 && first < want.size());
+		CHECK(ReadBytes(JoinPath(up, "lost.bin"), got) && got == want);
+		CHECK(MTime(JoinPath(up, "lost.bin")) == MTime(local));
+		CHECK(CountTempFiles(up) == 0);
+	}
+
+	// Download cut off, then continued.
+	{
+		Rig rig;
+		const Result r = rig.client->Download(JoinPath(up, "lost.bin"), W(JoinPath(down, "resumed.bin")), false,
+			[&](uint64_t d) { if (d > 1000000) rig.Disconnect(); }, noCancel);
+		CHECK(r.status == kErrDisconnected);
+		CHECK(!Exists(JoinPath(down, "resumed.bin")) && CountTempFiles(down) == 1);
+	}
+	{
+		Rig rig;
+		uint64_t first = UINT64_MAX;
+		const Result r = rig.client->Download(JoinPath(up, "lost.bin"), W(JoinPath(down, "resumed.bin")), false,
+			[&](uint64_t d) { if (first == UINT64_MAX) first = d; }, noCancel);
+		CHECK(r.Ok());
+		std::printf("download continued at byte %llu\n", (unsigned long long)first);
+		CHECK(first >= 1000000 && first < want.size());
+		CHECK(ReadBytes(JoinPath(down, "resumed.bin"), got) && got == want);
+		CHECK(CountTempFiles(down) == 0);
+	}
+
+	// A different version of the source (same size, new time and content)
+	// starts afresh instead of continuing the old partial upload.
+	{
+		Rig rig;
+		const Result r = rig.client->Upload(W(local), JoinPath(up, "v.bin"), false,
+			[&](uint64_t d) { if (d > 400000) rig.Disconnect(); }, noCancel);
+		CHECK(r.status == kErrDisconnected);
+	}
+	Sleep(20);
+	const auto v2 = RandomBytes(want.size(), 77);
+	WriteBytes(local, v2);
+	{
+		Rig rig;
+		const Result r = rig.client->Upload(W(local), JoinPath(up, "v.bin"), false, nullptr, noCancel);
+		CHECK(r.Ok() && ReadBytes(JoinPath(up, "v.bin"), got) && got == v2);
+		CHECK(CountTempFiles(up) == 1); // the old version's partial file
+	}
+	DeleteTempFiles(up);
+	WriteBytes(local, want);
+
+	// Cancelling (unlike a dropped connection) throws partial data away.
+	{
+		Rig rig;
+		std::atomic<bool> cancel{false};
+		Result r = rig.client->Download(JoinPath(up, "lost.bin"), W(JoinPath(down, "c.bin")), false,
+			[&](uint64_t d) { if (d > 500000) cancel = true; }, cancel);
+		CHECK(r.status == kErrCancelled);
+		cancel = false;
+		r = rig.client->Upload(W(local), JoinPath(up, "c.bin"), false, [&](uint64_t d) { if (d > 500000) cancel = true; }, cancel);
+		CHECK(r.status == kErrCancelled);
+		Sleep(300);
+	}
+	CHECK(CountTempFiles(up) == 0 && CountTempFiles(down) == 0);
+}
+
 // The server may refuse file access (service mode, nobody logged on).
 static void TestRefused()
 {
@@ -432,7 +525,10 @@ static void TestQueue()
 	FileTransferQueue q(*rig.client, qc);
 	auto waitFinished = [&](int n) {
 		std::unique_lock<std::mutex> lk(fm);
-		fc.wait_for(lk, std::chrono::seconds(60), [&] { return finished >= n; });
+		const bool ok = fc.wait_for(lk, std::chrono::seconds(60), [&] { return finished >= n; });
+		if (!ok)
+			std::fprintf(stderr, "timed out waiting for %d finished items (have %d)\n", n, finished);
+		CHECK(ok);
 	};
 
 	// Folder upload.
@@ -446,49 +542,70 @@ static void TestQueue()
 	CHECK(Exists(JoinPath(dst, "tree\\empty")));
 	CHECK(asked == 0);
 
-	// Again: every file conflicts. Skip all.
-	answer = ConflictChoice::Skip;
-	answerAll = true;
+	// Again, unchanged: the files are already there, nothing is asked.
 	q.Add(Direction::Upload, src, true, 0, dst);
 	waitFinished(2);
 	snap = q.Snapshot();
-	CHECK(snap[1].state == ItemState::Done && snap[1].filesSkipped == 3 && snap[1].filesDone == 0);
+	CHECK(snap[1].state == ItemState::Done && snap[1].filesIdentical == 3 && snap[1].filesDone == 0);
+	CHECK(asked == 0);
+
+	// Changed files: every file conflicts. Skip all.
+	Sleep(20); // a different modification time
+	WriteBytes(JoinPath(src, "1.txt"), RandomBytes(101, 13));
+	WriteBytes(JoinPath(src, "x\\2.txt"), RandomBytes(400001, 14));
+	WriteBytes(JoinPath(src, "x\\y\\3.txt"), RandomBytes(6, 15));
+	answer = ConflictChoice::Skip;
+	answerAll = true;
+	q.Add(Direction::Upload, src, true, 0, dst);
+	waitFinished(3);
+	snap = q.Snapshot();
+	CHECK(snap[2].state == ItemState::Done && snap[2].filesSkipped == 3 && snap[2].filesDone == 0);
 	CHECK(asked == 1); // "apply to all"
 
 	// Keep both, asked each time.
 	answer = ConflictChoice::KeepBoth;
 	answerAll = false;
 	asked = 0;
-	q.Add(Direction::Upload, JoinPath(src, "1.txt"), false, 100, JoinPath(dst, "tree"));
-	waitFinished(3);
+	q.Add(Direction::Upload, JoinPath(src, "1.txt"), false, 101, JoinPath(dst, "tree"));
+	waitFinished(4);
 	CHECK(asked == 1 && Exists(JoinPath(dst, "tree\\1 (2).txt")));
 
-	// Folder download, then overwrite.
-	q.Add(Direction::Download, JoinPath(dst, "tree"), true, 0, back);
-	waitFinished(4);
-	snap = q.Snapshot();
-	CHECK(snap[3].state == ItemState::Done && snap[3].files == 4);
-	CHECK(ReadBytes(JoinPath(back, "tree\\x\\y\\3.txt"), a) && ReadBytes(JoinPath(src, "x\\y\\3.txt"), b) && a == b);
-	answer = ConflictChoice::Overwrite;
-	answerAll = true;
-	asked = 0;
+	// Folder download; again unchanged (nothing to do); then changed
+	// local copies are overwritten.
 	q.Add(Direction::Download, JoinPath(dst, "tree"), true, 0, back);
 	waitFinished(5);
 	snap = q.Snapshot();
-	CHECK(snap[4].state == ItemState::Done && snap[4].filesDone == 4 && asked == 1);
+	CHECK(snap[4].state == ItemState::Done && snap[4].files == 4 && snap[4].filesDone == 4);
+	CHECK(ReadBytes(JoinPath(back, "tree\\x\\y\\3.txt"), a) && ReadBytes(JoinPath(dst, "tree\\x\\y\\3.txt"), b) && a == b);
+	CHECK(MTime(JoinPath(back, "tree\\x\\2.txt")) == MTime(JoinPath(dst, "tree\\x\\2.txt")));
+	asked = 0;
+	q.Add(Direction::Download, JoinPath(dst, "tree"), true, 0, back);
+	waitFinished(6);
+	snap = q.Snapshot();
+	CHECK(snap[5].state == ItemState::Done && snap[5].filesIdentical == 4 && asked == 0);
+	Sleep(20);
+	for (const char* f : { "1.txt", "1 (2).txt", "x\\2.txt", "x\\y\\3.txt" })
+		WriteBytes(JoinPath(JoinPath(back, "tree"), f), RandomBytes(7, 16));
+	answer = ConflictChoice::Overwrite;
+	answerAll = true;
+	q.Add(Direction::Download, JoinPath(dst, "tree"), true, 0, back);
+	waitFinished(7);
+	snap = q.Snapshot();
+	CHECK(snap[6].state == ItemState::Done && snap[6].filesDone == 4 && asked == 1);
+	CHECK(ReadBytes(JoinPath(back, "tree\\x\\2.txt"), a) && ReadBytes(JoinPath(dst, "tree\\x\\2.txt"), b) && a == b);
 
 	// A missing source fails cleanly.
 	q.Add(Direction::Download, JoinPath(dst, "nothing"), false, 0, back);
-	waitFinished(6);
+	waitFinished(8);
 	snap = q.Snapshot();
-	CHECK(snap[5].state == ItemState::Failed && !snap[5].lastError.empty());
+	CHECK(snap[7].state == ItemState::Failed && !snap[7].lastError.empty() && !snap[7].interrupted);
 
 	// Cancel a queued item.
 	q.Add(Direction::Upload, src, true, 0, dst);
 	q.Add(Direction::Upload, src, true, 0, dst);
 	snap = q.Snapshot();
-	q.Cancel(snap.back().id);
-	waitFinished(8);
+	q.Cancel(snap.back().id); // never runs, so never reports "finished"
+	waitFinished(9);
 	snap = q.Snapshot();
 	CHECK(snap.back().state == ItemState::Cancelled);
 	q.ClearFinished();
@@ -515,6 +632,7 @@ int main()
 	TestBasics();
 	TestRefused();
 	TestTransfers();
+	TestResume();
 	TestQueue();
 
 	// Clean up with our own delete.

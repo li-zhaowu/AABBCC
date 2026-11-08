@@ -82,6 +82,7 @@ private:
 		uint64_t written = 0;
 		uint32_t failed = kOk;   // write: first error
 		bool overwrite = false;
+		bool resumable = false;  // write: keep the temporary file if the connection drops
 	};
 
 	void WorkerMain();
@@ -130,6 +131,9 @@ std::string Win32Message(DWORD error);
 uint64_t FileTimeToU64(const FILETIME& ft);
 FILETIME U64ToFileTime(uint64_t v);
 uint32_t AttributesToWire(DWORD attributes);
+// Delete "~uvnc-*.part" files older than a week in a folder (with a
+// trailing backslash): partial transfers nobody came back for.
+void PurgeOldPartFiles(const std::wstring& folder);
 
 } // namespace fileman
 

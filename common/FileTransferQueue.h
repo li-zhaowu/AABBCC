@@ -50,12 +50,14 @@ struct TransferItem {
 	uint64_t doneBytes = 0;
 	uint32_t files = 0;
 	uint32_t filesDone = 0;
-	uint32_t filesSkipped = 0;
+	uint32_t filesSkipped = 0;   // by the user's choice
+	uint32_t filesIdentical = 0; // the target already had the same file
 	uint32_t errors = 0;
 	std::string currentFile;   // UTF-8, while running
 	std::string lastError;     // UTF-8
 	uint64_t startedMs = 0;    // GetTickCount64 at start, 0 = not started
 	uint64_t finishedMs = 0;
+	bool interrupted = false;  // failed because the connection dropped
 };
 
 enum class ConflictChoice { Overwrite, Skip, KeepBoth, Cancel };
@@ -96,6 +98,10 @@ public:
 	void CancelAll();
 	// Remove finished, failed and cancelled items.
 	void ClearFinished();
+	// Queue failed items again (only those cut off by the connection, or
+	// all failed ones). Files already complete at the target are skipped;
+	// partial ones continue where they stopped. Returns how many.
+	size_t Retry(bool interruptedOnly);
 
 	std::vector<TransferItem> Snapshot() const;
 	bool Busy() const;

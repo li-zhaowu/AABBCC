@@ -72,12 +72,33 @@ static void TestRequests()
 	uint32_t h = 0;
 	CHECK(DecodeHandleRequest(b.data(), b.size(), id, h) && id == 11 && h == 12);
 
-	OpenWriteRequest ow{ 13, "D:\\x\\y.bin", 5000000000ULL, kWriteOverwrite };
+	OpenWriteRequest ow{ 13, "D:\\x\\y.bin", 5000000000ULL, kWriteOverwrite | kWriteResume, 123456789ULL };
 	b = EncodeOpenWrite(ow);
 	OpenWriteRequest ow2;
 	CHECK(DecodeOpenWrite(b.data(), b.size(), ow2) && ow2.reqId == 13 && ow2.path == ow.path &&
-	      ow2.size == 5000000000ULL && ow2.flags == kWriteOverwrite);
-	CheckTruncations(b, [](const uint8_t* d, size_t n) { OpenWriteRequest r; return DecodeOpenWrite(d, n, r); });
+	      ow2.size == 5000000000ULL && ow2.flags == (kWriteOverwrite | kWriteResume) && ow2.mtime == 123456789ULL);
+	{
+		// Without the time (older viewers) it is still accepted; shorter not.
+		const size_t old = b.size() - 8;
+		for (size_t k = 0; k < old; ++k)
+			CHECK(!DecodeOpenWrite(b.data(), k, ow2));
+		CHECK(DecodeOpenWrite(b.data(), old, ow2) && ow2.mtime == 0);
+		CHECK(!DecodeOpenWrite(b.data(), old + 3, ow2)); // a cut-off time
+	}
+	OpenWriteReply owr{ 9, 777777ULL };
+	b = EncodeOpenWriteReply(owr);
+	OpenWriteReply owr2;
+	CHECK(DecodeOpenWriteReply(b.data(), b.size(), owr2) && owr2.handle == 9 && owr2.offset == 777777ULL);
+	CHECK(DecodeOpenWriteReply(b.data(), 4, owr2) && owr2.offset == 0);
+	CHECK(!DecodeOpenWriteReply(b.data(), 3, owr2));
+	// Temporary names: stable, case-insensitive for the path, specific to
+	// the file version.
+	const std::string t1 = ResumeTempName("C:\\Data\\A.bin", 100, 5);
+	CHECK(t1 == ResumeTempName("c:\\data\\a.bin", 100, 5));
+	CHECK(t1 != ResumeTempName("C:\\Data\\A.bin", 101, 5));
+	CHECK(t1 != ResumeTempName("C:\\Data\\A.bin", 100, 6));
+	CHECK(t1 != ResumeTempName("C:\\Data\\B.bin", 100, 5));
+	CHECK(t1.size() == 27 && t1.rfind("~uvnc-", 0) == 0 && t1.substr(22) == ".part");
 
 	std::vector<uint8_t> bytes(1000, 0xAB);
 	b = EncodeWrite(WriteHeader{ 2, 77 }, bytes.data(), bytes.size());

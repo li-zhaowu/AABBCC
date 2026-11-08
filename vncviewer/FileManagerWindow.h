@@ -166,7 +166,7 @@ private:
 	std::unique_ptr<fileman::FileTransferQueue> m_queue;
 	HWND m_hwnd = NULL;
 	HWND m_tooltip = NULL;
-	HWND m_queueTitle = NULL, m_queueSummary = NULL, m_queueList = NULL, m_btnCancel = NULL, m_btnClear = NULL;
+	HWND m_queueTitle = NULL, m_queueSummary = NULL, m_queueList = NULL, m_btnCancel = NULL, m_btnClear = NULL, m_btnRetry = NULL;
 	Pane m_panes[2];
 	bool m_connected = false;
 	bool m_closing = false;

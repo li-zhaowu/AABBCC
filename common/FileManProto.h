@@ -22,8 +22,11 @@
 //   Read       stream [offset, offset+length) of a handle as Data messages;
 //              a Reply only comes on error
 //   Close      close a read handle
-//   OpenWrite  -> handle; the server writes to a temporary file next to
-//              the target
+//   OpenWrite  -> handle (+ resume offset); the server writes to a
+//              temporary file next to the target. With kWriteResume the
+//              temporary file is named after the target, size and time, is
+//              kept when the connection drops, and a later OpenWrite of the
+//              same file continues it (the reply says from where)
 //   Write      bytes at an offset (in order); acknowledged by WriteAck
 //   CloseWrite commit (rename the temporary file into place, set the time)
 //              or discard
@@ -155,12 +158,14 @@ bool DecodeHandleRequest(const uint8_t* p, size_t len, uint32_t& reqId, uint32_t
 
 enum OpenWriteFlags : uint8_t {
 	kWriteOverwrite = 0x01, // replace an existing file (else kErrExists)
+	kWriteResume    = 0x02, // keep a partial upload across disconnects; continue one
 };
 struct OpenWriteRequest {
 	uint32_t reqId = 0;
 	std::string path;
-	uint64_t size = 0;    // expected size (disk space check)
+	uint64_t size = 0;    // expected size (disk space check, resume identity)
 	uint8_t flags = 0;
+	uint64_t mtime = 0;   // source time (resume identity); optional on the wire
 };
 std::vector<uint8_t> EncodeOpenWrite(const OpenWriteRequest& r);
 bool DecodeOpenWrite(const uint8_t* p, size_t len, OpenWriteRequest& out);
@@ -217,9 +222,20 @@ struct OpenReadReply {
 std::vector<uint8_t> EncodeOpenReadReply(const OpenReadReply& r);
 bool DecodeOpenReadReply(const uint8_t* p, size_t len, OpenReadReply& out);
 
-// OpenWrite body: the handle.
-std::vector<uint8_t> EncodeHandle(uint32_t handle);
-bool DecodeHandle(const uint8_t* p, size_t len, uint32_t& handle);
+// OpenWrite body: the handle, and where to continue (0 = from the start;
+// optional on the wire).
+struct OpenWriteReply {
+	uint32_t handle = 0;
+	uint64_t offset = 0;
+};
+std::vector<uint8_t> EncodeOpenWriteReply(const OpenWriteReply& r);
+bool DecodeOpenWriteReply(const uint8_t* p, size_t len, OpenWriteReply& out);
+
+// Name of the temporary file of a resumable transfer of `targetPath` with
+// the given source size and time: "~uvnc-<16 hex digits>.part", the same
+// on both sides (stable across restarts, different for another version of
+// the file).
+std::string ResumeTempName(const std::string& targetPath, uint64_t size, uint64_t mtime);
 
 enum DataFlags : uint8_t {
 	kDataEof = 0x01, // the file ends with this piece

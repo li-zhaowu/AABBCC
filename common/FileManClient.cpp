@@ -413,19 +413,40 @@ Result FileManClient::Download(const std::string& remotePath, const std::wstring
 		SendRequest(kClose, id, EncodeHandleRequest(id, handle));
 	};
 
-	// Local temporary file next to the target.
+	// Local temporary file next to the target, named after the target and
+	// the remote file's size and time: if an earlier attempt of this very
+	// file was interrupted, continue where it stopped.
 	const std::wstring localPath = LocalLong(localPathIn);
-	const std::wstring temp = DirOf(localPath) + L"~uvnc-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
-		std::to_wstring(++m_tempCounter) + L".part";
-	HANDLE file = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-		FILE_ATTRIBUTE_HIDDEN | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+	const std::wstring temp = DirOf(localPath) + Utf8ToWide(ResumeTempName(WideToUtf8(localPathIn), size, opened->mtime));
+	uint64_t resumeAt = 0;
+	HANDLE file = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+	if (file != INVALID_HANDLE_VALUE) {
+		LARGE_INTEGER existing, zero = {};
+		if (GetFileSizeEx(file, &existing) && static_cast<uint64_t>(existing.QuadPart) <= size &&
+		    SetFilePointerEx(file, zero, NULL, FILE_END)) {
+			resumeAt = static_cast<uint64_t>(existing.QuadPart);
+		} else {
+			CloseHandle(file);
+			file = INVALID_HANDLE_VALUE;
+		}
+	}
+	if (file == INVALID_HANDLE_VALUE) {
+		PurgeOldPartFiles(DirOf(localPath));
+		file = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+			FILE_ATTRIBUTE_HIDDEN | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+	}
 	if (file == INVALID_HANDLE_VALUE) {
 		r = Win32Result(GetLastError());
 		closeRemote();
 		return r;
 	}
+	if (resumeAt) {
+		Log(1, "continuing " + remotePath + " at byte " + std::to_string(resumeAt));
+		if (progress)
+			progress(resumeAt);
+	}
 
-	uint64_t requested = 0, received = 0;
+	uint64_t requested = resumeAt, received = resumeAt;
 	auto lastProgress = Clock::now();
 	auto issueReads = [&]() -> bool {
 		while (requested < size && requested - received < uint64_t(readChunk) * readWindow) {
@@ -441,7 +462,7 @@ Result FileManClient::Download(const std::string& remotePath, const std::wstring
 		}
 		return true;
 	};
-	bool eof = size == 0;
+	bool eof = received >= size;
 	if (!issueReads())
 		r = MakeResult(kErrDisconnected);
 	while (r.Ok() && !eof && received < size) {
@@ -511,7 +532,10 @@ Result FileManClient::Download(const std::string& remotePath, const std::wstring
 		}
 		r = Win32Result(GetLastError());
 	}
-	DeleteFileW(temp.c_str());
+	// Interrupted by the connection: keep what we have for the next try.
+	// Anything else (cancel, error): throw it away.
+	if (r.status != kErrDisconnected && r.status != kErrTimeout)
+		DeleteFileW(temp.c_str());
 	return r;
 }
 
@@ -534,15 +558,18 @@ Result FileManClient::Upload(const std::wstring& localPathIn, const std::string&
 	}
 	const uint64_t size = static_cast<uint64_t>(li.QuadPart);
 
-	auto handle = std::make_shared<uint32_t>(0);
+	// Resumable: if an earlier upload of this very file (same size and
+	// time) was cut off, the server tells us how much it already has.
+	auto opened = std::make_shared<OpenWriteReply>();
 	Result r = Wait([&](std::function<void(const Result&)> set) {
 		OpenWriteRequest ow;
 		ow.path = remotePath;
 		ow.size = size;
-		ow.flags = overwrite ? kWriteOverwrite : 0;
-		ow.reqId = NewRequest([set, handle](const ReplyHeader& h, const uint8_t* body, size_t len) {
+		ow.mtime = FileTimeToU64(mtime);
+		ow.flags = static_cast<uint8_t>((overwrite ? kWriteOverwrite : 0) | kWriteResume);
+		ow.reqId = NewRequest([set, opened](const ReplyHeader& h, const uint8_t* body, size_t len) {
 			Result res = MakeResult(h.status, h.message);
-			if (res.Ok() && !DecodeHandle(body, len, *handle))
+			if (res.Ok() && (!DecodeOpenWriteReply(body, len, *opened) || opened->offset > 0xFFFFFFFFFFFFULL))
 				res = MakeResult(kErrBadRequest, "malformed reply");
 			set(res);
 		});
@@ -552,6 +579,18 @@ Result FileManClient::Upload(const std::wstring& localPathIn, const std::string&
 		CloseHandle(file);
 		return r;
 	}
+	auto handle = std::make_shared<uint32_t>(opened->handle);
+	uint64_t sent = 0, acked = 0;
+	if (opened->offset > 0 && opened->offset <= size) {
+		LARGE_INTEGER pos;
+		pos.QuadPart = static_cast<LONGLONG>(opened->offset);
+		if (SetFilePointerEx(file, pos, NULL, FILE_BEGIN)) {
+			sent = acked = opened->offset;
+			Log(1, "continuing " + remotePath + " at byte " + std::to_string(sent));
+			if (progress)
+				progress(acked);
+		}
+	}
 
 	auto sink = std::make_shared<AckSink>();
 	{
@@ -559,7 +598,10 @@ Result FileManClient::Upload(const std::wstring& localPathIn, const std::string&
 		m_ackSinks[*handle] = sink;
 	}
 	std::vector<uint8_t> buf(kDataPieceBytes);
-	uint64_t sent = 0, acked = 0;
+	{
+		std::lock_guard<std::mutex> lk(sink->mutex);
+		sink->acked = acked;
+	}
 	auto lastProgress = Clock::now();
 	while (r.Ok() && acked < size) {
 		// Send while the window allows.
