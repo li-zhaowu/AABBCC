@@ -170,6 +170,7 @@ void ViewerExtChannel::OnNegotiated(uint32_t mask)
 	if (mask & ChannelBit(kChFiles))
 		m_files->OnConnected();
 	m_cc->OnFileChannel((mask & ChannelBit(kChFiles)) != 0);
+	m_cc->OnExtReady();
 }
 
 void ViewerExtChannel::Log(int level, const std::string& msg)

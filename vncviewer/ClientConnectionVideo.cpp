@@ -20,6 +20,7 @@
 #include "Exception.h"
 #include "VideoDecoder.h"
 #include "VideoCursor.h"
+#include "MediaSettings.h"
 #include "common/VideoProto.h"
 
 #include <libyuv.h> // vcpkg port "libyuv"
@@ -87,6 +88,37 @@ bool ClientConnection::SendVideoMessage(uint8_t subtype, const std::vector<uint8
 	return m_ext->Send(kPrioControl, kChVideo, subtype, payload);
 }
 
+UINT ClientConnection::MediaRestoreMessage()
+{
+	static const UINT msg = RegisterWindowMessageW(L"UltraVNC.MediaRestore");
+	return msg;
+}
+
+// Reader thread, when the extension channel is (re)negotiated.
+void ClientConnection::OnExtReady()
+{
+	if (m_hwndMain && (m_restoreVideo || m_restoreAudio))
+		PostMessage(m_hwndMain, MediaRestoreMessage(), 0, 0);
+}
+
+// UI thread: after a reconnect, turn video mode and remote audio back on if
+// they were on when the connection dropped (media setting, default on).
+void ClientConnection::RestoreMediaAfterReconnect()
+{
+	const bool video = m_restoreVideo.exchange(false);
+	const bool audio = m_restoreAudio.exchange(false);
+	if (m_opts->m_fileMode || !MediaSettings::Load().restoreAfterReconnect)
+		return;
+	if (video && !m_videoRequested && m_ext->ChannelUsable(kChVideo)) {
+		VideoLog(1, "turning video mode back on after the reconnect");
+		ToggleVideoMode();
+	}
+	if (audio && !m_audioRequested && m_ext->ChannelUsable(kChAudio)) {
+		VideoLog(1, "turning remote audio back on after the reconnect");
+		ToggleRemoteAudio();
+	}
+}
+
 // UI thread (system menu).
 void ClientConnection::ToggleVideoMode()
 {
@@ -130,10 +162,22 @@ void ClientConnection::ToggleVideoMode()
 	VideoLog(1, "requested, codecs " + offered);
 }
 
-// Start parameters: 60 fps, up to 20 Mbps (design defaults), codecs.
+// Start parameters: frame rate, bitrate and codec from the media settings
+// (defaults 60 fps, up to 20 Mbps, automatic codec).
 video::Start ClientConnection::MakeVideoStart()
 {
+	const MediaSettings settings = MediaSettings::Load();
 	video::Start start;
+	start.maxFps = static_cast<uint16_t>(settings.videoFps);
+	start.maxBitrateKbps = static_cast<uint32_t>(settings.videoMaxMbps) * 1000;
+	if (settings.videoCodec != MediaSettings::kCodecAuto) {
+		// The user's choice; H.264 stays as the fallback if the server's GPU
+		// cannot encode it.
+		start.codec = settings.videoCodec == MediaSettings::kCodecAv1 ? video::kCodecAv1
+			: settings.videoCodec == MediaSettings::kCodecHevc ? video::kCodecHevc : video::kCodecH264;
+		start.codecMask = static_cast<uint8_t>(video::CodecBit(start.codec) | video::CodecBit(video::kCodecH264));
+		return start;
+	}
 	// AV1 and HEVC give better pictures per bit, but decoding them in
 	// software is heavy: offer them only if this machine decodes them on the
 	// GPU. The server takes the best one its GPU can encode (AV1: RTX 40 and

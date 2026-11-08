@@ -16,6 +16,7 @@
 #include "ClientConnection.h"
 #include "ClientConnectionExt.h"
 #include "AudioPlayer.h"
+#include "MediaSettings.h"
 #include "common/AudioProto.h"
 
 using namespace extmsg;
@@ -53,7 +54,11 @@ void ClientConnection::ToggleRemoteAudio()
 	if (!m_audioPlayer)
 		m_audioPlayer.reset(new AudioPlayer(&AudioLog));
 
-	audio::Start start; // AAC, 128 kbps, remote speakers muted
+	// AAC; bitrate and muting from the media settings.
+	const MediaSettings settings = MediaSettings::Load();
+	audio::Start start;
+	start.bitrateKbps = static_cast<uint32_t>(settings.audioKbps);
+	start.flags = settings.muteRemote ? audio::kStartMuteRemote : 0;
 	m_audioRequested = true;
 	if (!SendAudioMessage(audio::kStart, audio::EncodeStart(start))) {
 		m_audioRequested = false;

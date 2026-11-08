@@ -71,6 +71,7 @@ using namespace helper;
 #include "ClientConnectionExt.h"
 #include "AudioPlayer.h"
 #include "FileManagerWindow.h"
+#include "MediaSettings.h"
 extern HINSTANCE m_hInstResDLL;
 
 // [v1.0.2-jp1 fix]
@@ -1545,6 +1546,7 @@ void ClientConnection::CreateDisplay()
 		AppendMenu(hsysmenu, MF_STRING, ID_VIDEOMODE, L"Video Mode (GPU)");
 		AppendMenu(hsysmenu, MF_STRING, ID_WINDOWMODE, L"Single Window...");
 		AppendMenu(hsysmenu, MF_STRING, ID_REMOTEAUDIO, L"Remote Audio");
+		AppendMenu(hsysmenu, MF_STRING, ID_MEDIASETTINGS, L"Media Settings...");
 		// AppendMenu(hsysmenu, MF_STRING, ID_BUTTON,	_T("Show Toolbar Buttons"));
 		AppendMenu(hsysmenu, MF_SEPARATOR, NULL, NULL);
 		AppendMenu(hsysmenu, MF_STRING, ID_DINPUT,	sz_L19); // disable remote input
@@ -4776,6 +4778,11 @@ void ClientConnection::SuspendThread()
 	m_bKillThread = true;
 	m_running = false;
 	m_ext->Disconnect();
+	// Remember what was on, to turn it back on after the reconnect.
+	if (m_videoRequested)
+		m_restoreVideo = true;
+	if (m_audioRequested)
+		m_restoreAudio = true;
 	ResetVideoState();
 	ResetWindowState();
 	ResetAudioState();
@@ -8543,6 +8550,10 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 		_this->OnFileChannelEvent(wParam);
 		return 0;
 	}
+	if (iMsg == MediaRestoreMessage()) {
+		_this->RestoreMediaAfterReconnect();
+		return 0;
+	}
 	if (iMsg == AudioEventMessage()) {
 		_this->OnAudioEvent(wParam);
 		return 0;
@@ -8597,6 +8608,9 @@ LRESULT CALLBACK ClientConnection::WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, 
 						return 0;
 					case ID_REMOTEAUDIO:
 						_this->ToggleRemoteAudio();
+						return 0;
+					case ID_MEDIASETTINGS:
+						ShowMediaSettingsDialog(_this->m_hwndMain);
 						return 0;
 					case ID_SW:
 						{

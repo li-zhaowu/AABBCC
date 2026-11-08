@@ -58,6 +58,8 @@ set(${PROJECT_NAME}_SOURCES
     ClientConnectionFiles.cpp
     FileManagerWindow.cpp
     FileManagerDragDrop.cpp
+    MediaSettings.cpp
+    UiText.cpp
     ClientConnectionCoRRE.cpp
     ClientConnectionCopyRect.cpp
     ClientConnectionCursor.cpp

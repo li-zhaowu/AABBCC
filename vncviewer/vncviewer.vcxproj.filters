@@ -132,6 +132,12 @@
     <ClCompile Include="FileManagerDragDrop.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MediaSettings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UiText.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="VideoDecoder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -312,6 +318,12 @@
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="FileManagerDragDrop.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="MediaSettings.h">
+      <Filter>header</Filter>
+    </ClInclude>
+    <ClInclude Include="UiText.h">
       <Filter>header</Filter>
     </ClInclude>
     <ClInclude Include="VideoDecoder.h">

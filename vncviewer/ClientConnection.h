@@ -64,6 +64,7 @@ extern "C"
 #define ID_VIDEOMODE 0xC6C0
 #define ID_WINDOWMODE 0xC6D0
 #define ID_REMOTEAUDIO 0xC6E0
+#define ID_MEDIASETTINGS 0xC6F0
 #include "common/WindowProto.h"
 #include "./directx/directxviewer.h"
 #include "FpsCounter.h"
@@ -528,6 +529,13 @@ private:
 	bool SendVideoMessage(uint8_t subtype, const std::vector<uint8_t>& payload);
 	void ToggleVideoMode();
 	video::Start MakeVideoStart();
+	// Media settings and restoring video / audio after a reconnect
+	// (ClientConnectionVideo.cpp).
+	static UINT MediaRestoreMessage();
+	void OnExtReady();                         // any thread: the extension channel is negotiated
+	void RestoreMediaAfterReconnect();         // UI thread
+	std::atomic<bool> m_restoreVideo{false};   // video mode was on when the connection dropped
+	std::atomic<bool> m_restoreAudio{false};   // remote audio was on
 	void StopVideoMode(bool tellServer);
 	void OnVideoModeEnded(WPARAM statusCode);
 	void ResetVideoState();

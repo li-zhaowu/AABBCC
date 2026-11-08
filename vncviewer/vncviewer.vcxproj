@@ -1775,6 +1775,8 @@
     <ClCompile Include="ClientConnectionFiles.cpp" />
     <ClCompile Include="FileManagerWindow.cpp" />
     <ClCompile Include="FileManagerDragDrop.cpp" />
+    <ClCompile Include="MediaSettings.cpp" />
+    <ClCompile Include="UiText.cpp" />
     <ClCompile Include="ClientConnectionExt.cpp" />
     <ClCompile Include="Daemon.cpp">
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -2422,6 +2424,9 @@
     <ClInclude Include="..\common\FileTransferQueue.h" />
     <ClInclude Include="FileManagerWindow.h" />
     <ClInclude Include="FileManagerDragDrop.h" />
+    <ClInclude Include="MediaSettings.h" />
+    <ClInclude Include="UiText.h" />
+    <None Include="UiTextTable.inc" />
     <ClInclude Include="ClientConnectionExt.h" />
     <ClInclude Include="Daemon.h" />
     <ClInclude Include="..\rfb\dh.h" />
