@@ -42,7 +42,7 @@
 #include "common/FileManClient.h"
 #include "common/FileTransferQueue.h"
 
-namespace fmdnd { class DropTarget; }
+namespace fmdnd { class DropTarget; class RemoteSession; }
 
 class FileManagerWindow {
 public:
@@ -187,4 +187,6 @@ private:
 	int m_pendingRemoteOps = 0;
 	std::string m_remoteOpErrors;
 	bool m_ole = false;
+	// Streams of remote files dragged to Explorer; closed with the window.
+	std::shared_ptr<fmdnd::RemoteSession> m_session;
 };

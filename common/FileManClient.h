@@ -53,6 +53,38 @@ struct Result {
 	std::string Describe() const;
 };
 
+class FileManClient;
+
+// Reads one remote file from start to end, with read-ahead (files dragged
+// to Explorer are streamed through this). Not thread safe; one thread uses it.
+class RemoteReader {
+public:
+	~RemoteReader();
+	uint64_t Size() const { return m_size; }
+	uint64_t MTime() const { return m_mtime; }
+	uint64_t Position() const { return m_pos; }
+	// Up to n bytes; got = 0 at the end of the file. Blocks for the network.
+	Result Read(void* buf, size_t n, size_t& got);
+	// Stop reading and close the remote file (also done by the destructor).
+	void Close();
+
+private:
+	friend class FileManClient;
+	struct State;
+	explicit RemoteReader(FileManClient& client) : m_client(&client) {}
+	bool IssueReads();
+	FileManClient* m_client;
+	std::shared_ptr<State> m_state;
+	uint32_t m_handle = 0;
+	uint64_t m_size = 0, m_mtime = 0;
+	uint64_t m_pos = 0;        // bytes handed out
+	uint64_t m_requested = 0;  // bytes asked for
+	uint64_t m_received = 0;   // bytes arrived
+	bool m_eof = false;
+	bool m_closed = false;
+	std::vector<uint32_t> m_readIds;
+};
+
 class FileManClient {
 public:
 	explicit FileManClient(ClientCallbacks cb);
@@ -93,6 +125,9 @@ public:
 	Result Upload(const std::wstring& localPath, const std::string& remotePath, bool overwrite,
 	              const Progress& progress, const std::atomic<bool>& cancel);
 
+	// Open a remote file for sequential reading (null on failure).
+	std::unique_ptr<RemoteReader> OpenReader(const std::string& remotePath, Result& result);
+
 	// Tuning (tests use smaller values).
 	uint32_t readChunk = 1024 * 1024;     // bytes per Read request
 	uint32_t readWindow = 4;              // Read requests in flight
@@ -100,6 +135,7 @@ public:
 	std::chrono::milliseconds stallTimeout{ 60000 };
 
 private:
+	friend class RemoteReader;
 	using ReplyFn = std::function<void(const ReplyHeader&, const uint8_t* body, size_t len)>;
 	struct DataSink;
 	struct AckSink;

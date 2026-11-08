@@ -222,6 +222,7 @@ FileManagerWindow::FileManagerWindow(const Options& options) : m_options(options
 	// Drag and drop needs OLE on this (the UI) thread.
 	const HRESULT hr = OleInitialize(NULL);
 	m_ole = SUCCEEDED(hr);
+	m_session = std::make_shared<fmdnd::RemoteSession>(m_client);
 }
 
 FileManagerWindow::~FileManagerWindow()
@@ -814,6 +815,10 @@ LRESULT FileManagerWindow::Handle(UINT msg, WPARAM wp, LPARAM lp)
 			}
 			m_queue->Shutdown();
 		}
+		// Explorer may still be copying dragged remote files: stop that
+		// cleanly (it reports an error) before the connection goes away.
+		if (m_session)
+			m_session->Shutdown();
 		for (Pane& p : m_panes) {
 			if (p.dropTarget) {
 				RevokeDragDrop(p.list);
@@ -1696,25 +1701,36 @@ void FileManagerWindow::BeginDrag(Pane& p)
 	const auto sel = Selected(p);
 	if (sel.empty() || !m_ole)
 		return;
-	auto* data = new fmdnd::DataObject;
+	IDataObject* data = nullptr;
 	if (p.id == kLocal) {
 		// Real files: Explorer and other programs accept them too.
+		auto* local = new fmdnd::DataObject;
 		std::vector<std::wstring> paths;
 		for (int i : sel)
 			paths.push_back(W(JoinPath(p.path, U(p.items[static_cast<size_t>(i)].name))));
-		data->Add(CF_HDROP, fmdnd::MakeHDrop(paths));
+		local->Add(CF_HDROP, fmdnd::MakeHDrop(paths));
+		data = local;
 	} else {
-		if (!m_connected) {
-			data->Release();
+		if (!m_connected)
 			return;
-		}
+		// Remote items: our private format for the local side, and virtual
+		// files (streamed from the server) for Explorer and other programs.
 		m_remoteDrag.clear();
+		std::vector<fmdnd::VirtualDataObject::Source> sources;
 		for (int i : sel) {
 			const Item& it = p.items[static_cast<size_t>(i)];
 			m_remoteDrag.emplace_back(JoinPath(p.path, U(it.name)), it.dir);
+			fmdnd::VirtualDataObject::Source src;
+			src.path = JoinPath(p.path, U(it.name));
+			src.directory = it.dir;
+			src.size = it.size;
+			src.mtime = it.mtime;
+			sources.push_back(src);
 		}
+		auto* remote = new fmdnd::VirtualDataObject(m_session, std::move(sources));
 		const RemoteDragCookie cookie = { GetCurrentProcessId(), m_cookie };
-		data->Add(static_cast<CLIPFORMAT>(kCfRemoteItems), fmdnd::MakeBytes(&cookie, sizeof(cookie)));
+		remote->Add(static_cast<CLIPFORMAT>(kCfRemoteItems), fmdnd::MakeBytes(&cookie, sizeof(cookie)));
+		data = remote;
 	}
 	auto* source = new fmdnd::DropSource;
 	DWORD effect = 0;

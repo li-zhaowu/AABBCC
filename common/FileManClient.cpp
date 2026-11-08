@@ -11,6 +11,7 @@
 #include "FileManServer.h" // string and time helpers
 
 #include <algorithm>
+#include <cstring>
 #include <deque>
 
 using namespace extmsg;
@@ -669,6 +670,147 @@ Result FileManClient::Upload(const std::wstring& localPathIn, const std::string&
 		return closed;
 	}
 	return r;
+}
+
+// --- sequential reader -----------------------------------------------------------
+
+struct RemoteReader::State {
+	std::shared_ptr<FileManClient::DataSink> sink;
+	std::deque<FileManClient::DataSink::Piece> buffer;
+	size_t frontUsed = 0; // bytes of buffer.front() already handed out
+	Clock::time_point lastProgress;
+};
+
+std::unique_ptr<RemoteReader> FileManClient::OpenReader(const std::string& remotePath, Result& result)
+{
+	auto opened = std::make_shared<OpenReadReply>();
+	result = Wait([&](std::function<void(const Result&)> set) {
+		const uint32_t id = NewRequest([set, opened](const ReplyHeader& h, const uint8_t* body, size_t len) {
+			Result res = MakeResult(h.status, h.message);
+			if (res.Ok() && !DecodeOpenReadReply(body, len, *opened))
+				res = MakeResult(kErrBadRequest, "malformed reply");
+			set(res);
+		});
+		SendRequest(kOpenRead, id, EncodePathRequest(id, remotePath));
+	}, std::chrono::minutes(1));
+	if (!result.Ok())
+		return nullptr;
+	std::unique_ptr<RemoteReader> reader(new RemoteReader(*this));
+	reader->m_handle = opened->handle;
+	reader->m_size = opened->size;
+	reader->m_mtime = opened->mtime;
+	reader->m_eof = opened->size == 0;
+	reader->m_state = std::make_shared<RemoteReader::State>();
+	reader->m_state->sink = std::make_shared<DataSink>();
+	reader->m_state->lastProgress = Clock::now();
+	{
+		std::lock_guard<std::mutex> lk(m_mutex);
+		m_dataSinks[reader->m_handle] = reader->m_state->sink;
+	}
+	return reader;
+}
+
+RemoteReader::~RemoteReader()
+{
+	Close();
+}
+
+void RemoteReader::Close()
+{
+	if (m_closed || !m_state)
+		return;
+	m_closed = true;
+	FileManClient& c = *m_client;
+	{
+		std::lock_guard<std::mutex> lk(c.m_mutex);
+		c.m_dataSinks.erase(m_handle);
+		for (uint32_t id : m_readIds)
+			c.m_pending.erase(id);
+	}
+	const uint32_t id = c.NewRequest([](const ReplyHeader&, const uint8_t*, size_t) {});
+	c.SendRequest(kClose, id, EncodeHandleRequest(id, m_handle));
+}
+
+bool RemoteReader::IssueReads()
+{
+	FileManClient& c = *m_client;
+	auto sink = m_state->sink;
+	while (m_requested < m_size && m_requested - m_pos < uint64_t(c.readChunk) * c.readWindow) {
+		ReadRequest rq;
+		rq.handle = m_handle;
+		rq.offset = m_requested;
+		rq.length = static_cast<uint32_t>((std::min<uint64_t>)(c.readChunk, m_size - m_requested));
+		rq.reqId = c.NewRequest([sink](const ReplyHeader& h, const uint8_t*, size_t) {
+			std::lock_guard<std::mutex> lk(sink->mutex);
+			if (sink->error.Ok())
+				sink->error = MakeResult(h.status == kOk ? kErrIo : h.status, h.message);
+			sink->cond.notify_all();
+		});
+		m_readIds.push_back(rq.reqId);
+		if (!c.SendRequest(kRead, rq.reqId, EncodeRead(rq)))
+			return false;
+		m_requested += rq.length;
+	}
+	return true;
+}
+
+Result RemoteReader::Read(void* buf, size_t n, size_t& got)
+{
+	got = 0;
+	if (m_closed)
+		return MakeResult(kErrCancelled);
+	State& st = *m_state;
+	uint8_t* out = static_cast<uint8_t*>(buf);
+	while (got < n) {
+		// Hand out what has arrived.
+		while (got < n && !st.buffer.empty()) {
+			auto& front = st.buffer.front();
+			const size_t take = (std::min)(n - got, front.bytes.size() - st.frontUsed);
+			memcpy(out + got, front.bytes.data() + st.frontUsed, take);
+			got += take;
+			st.frontUsed += take;
+			m_pos += take;
+			if (st.frontUsed == front.bytes.size()) {
+				st.buffer.pop_front();
+				st.frontUsed = 0;
+			}
+		}
+		if (got == n || (st.buffer.empty() && (m_eof || m_received >= m_size)))
+			break;
+		// Keep the read-ahead going, then wait for more.
+		if (!IssueReads())
+			return MakeResult(kErrDisconnected);
+		std::deque<FileManClient::DataSink::Piece> arrived;
+		{
+			std::unique_lock<std::mutex> lk(st.sink->mutex);
+			st.sink->cond.wait_for(lk, std::chrono::milliseconds(100),
+				[&] { return !st.sink->pieces.empty() || !st.sink->error.Ok(); });
+			if (!st.sink->error.Ok())
+				return st.sink->error;
+			arrived.swap(st.sink->pieces);
+		}
+		if (arrived.empty()) {
+			if (Clock::now() - st.lastProgress > m_client->stallTimeout)
+				return MakeResult(kErrTimeout);
+			continue;
+		}
+		st.lastProgress = Clock::now();
+		for (auto& piece : arrived) {
+			if (piece.offset != m_received)
+				return MakeResult(kErrIo, "data out of order");
+			m_received += piece.bytes.size();
+			const bool eof = piece.eof;
+			if (!piece.bytes.empty())
+				st.buffer.push_back(std::move(piece));
+			if (eof) {
+				m_eof = true; // the file got shorter since it was opened
+				break;
+			}
+		}
+	}
+	if (got == 0 && m_received < m_size && !m_eof)
+		IssueReads();
+	return MakeResult(kOk);
 }
 
 } // namespace fileman
