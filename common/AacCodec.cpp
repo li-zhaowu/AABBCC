@@ -137,7 +137,8 @@ bool DrainTransform(IMFTransform* mft, F onBuffer, std::string& error)
 	}
 }
 
-bool FeedTransform(IMFTransform* mft, const void* data, size_t size, std::string& error)
+bool FeedTransform(IMFTransform* mft, const void* data, size_t size, std::string& error,
+                   LONGLONG time = 0, LONGLONG duration = 0)
 {
 	IMFMediaBuffer* b = nullptr;
 	if (FAILED(MFCreateMemoryBuffer(static_cast<DWORD>(size), &b))) {
@@ -153,7 +154,14 @@ bool FeedTransform(IMFTransform* mft, const void* data, size_t size, std::string
 	MFCreateSample(&s);
 	s->AddBuffer(b);
 	b->Release();
-	const HRESULT hr = mft->ProcessInput(0, s, 0);
+	HRESULT hr = S_OK;
+	if (duration > 0) {
+		hr = s->SetSampleTime(time);
+		if (SUCCEEDED(hr))
+			hr = s->SetSampleDuration(duration);
+	}
+	if (SUCCEEDED(hr))
+		hr = mft->ProcessInput(0, s, 0);
 	s->Release();
 	if (FAILED(hr)) {
 		error = Hr("ProcessInput", hr);
@@ -194,6 +202,7 @@ bool AacEncoder::Open(int sampleRate, int channels, uint32_t kbps, std::string& 
 		return false;
 	}
 	m_channels = channels;
+	m_sampleRate = sampleRate;
 	// The Microsoft AAC encoder takes 12000, 16000, 20000 or 24000 bytes/s.
 	m_kbps = kbps <= 112 ? 96 : kbps <= 144 ? 128 : kbps <= 176 ? 160 : 192;
 
@@ -251,6 +260,7 @@ void AacEncoder::Close()
 {
 	SafeRelease(m_mft);
 	m_config.clear();
+	m_sampleFrames = 0;
 }
 
 bool AacEncoder::Drain(std::vector<std::vector<uint8_t>>& frames, std::string& error)
@@ -268,8 +278,15 @@ bool AacEncoder::Encode(const int16_t* pcm, size_t sampleFrames, std::vector<std
 		error = "encoder not open";
 		return false;
 	}
-	if (!FeedTransform(m_mft, pcm, sampleFrames * m_channels * sizeof(int16_t), error))
+	if (sampleFrames == 0)
+		return true;
+	// Media Foundation requires timestamps and a nonzero duration for AAC input.
+	// Derive both boundaries from the sample count to avoid rounding drift.
+	const auto start = m_sampleFrames * 10000000 / m_sampleRate;
+	const auto end = (m_sampleFrames + static_cast<LONGLONG>(sampleFrames)) * 10000000 / m_sampleRate;
+	if (!FeedTransform(m_mft, pcm, sampleFrames * m_channels * sizeof(int16_t), error, start, end - start))
 		return false;
+	m_sampleFrames += static_cast<LONGLONG>(sampleFrames);
 	return Drain(frames, error);
 }
 

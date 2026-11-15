@@ -81,9 +81,14 @@ public:
 			return false;
 		std::lock_guard<std::mutex> lk(Mutes().mutex);
 		auto& entry = Mutes().devices[m_id];
-		if (entry.first++ == 0)
-			m_volume->GetMute(&entry.second);
-		m_volume->SetMute(TRUE, NULL);
+		if ((entry.first == 0 && FAILED(m_volume->GetMute(&entry.second))) ||
+		    FAILED(m_volume->SetMute(TRUE, NULL))) {
+			if (entry.first == 0)
+				Mutes().devices.erase(m_id);
+			SafeRelease(m_volume);
+			return false;
+		}
+		++entry.first;
 		return true;
 	}
 	void Release()
@@ -302,11 +307,11 @@ void vncAudioStreamer::ThreadMain(Start start)
 			fmt.bitrateKbps = encoder.BitrateKbps();
 			fmt.config = encoder.Config();
 			m_cb.send(kPrioAudio, kFormat, EncodeFormat(fmt));
-			if (mute && !speakerMute.Apply(device))
+			const bool muted = mute && speakerMute.Apply(device);
+			if (mute && !muted)
 				Log(0, "could not mute the speakers");
 			Log(1, "streaming " + std::to_string(src.outRate) + " Hz, " + std::to_string(outChannels) + " channel(s), " +
-				std::to_string(fmt.bitrateKbps) + " kbps AAC" + (mute ? ", speakers muted" : ""));
-			failures = 0;
+				std::to_string(fmt.bitrateKbps) + " kbps AAC" + (muted ? ", speakers muted" : ""));
 
 			std::vector<int16_t> pcm;
 			std::vector<std::vector<uint8_t>> frames;
@@ -365,6 +370,7 @@ void vncAudioStreamer::ThreadMain(Start start)
 				if (!pcm.empty()) {
 					frames.clear();
 					if (!encoder.Encode(pcm.data(), pcm.size() / outChannels, frames, error)) {
+						Log(0, "AAC encode: " + error);
 						failCode = kStatusError;
 						break;
 					}
@@ -381,6 +387,8 @@ void vncAudioStreamer::ThreadMain(Start start)
 							m_stop = true; // connection closed
 						}
 					}
+					if (!frames.empty() && now - started >= std::chrono::seconds(5))
+						failures = 0;
 				}
 				// The user picked another playback device: follow it.
 				if (now >= nextDeviceCheck) {

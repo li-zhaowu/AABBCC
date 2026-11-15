@@ -51,6 +51,8 @@ private:
 	bool Drain(std::vector<std::vector<uint8_t>>& frames, std::string& error);
 	IMFTransform* m_mft = nullptr;
 	int m_channels = 0;
+	int m_sampleRate = 0;
+	int64_t m_sampleFrames = 0;
 	uint32_t m_kbps = 0;
 	std::vector<uint8_t> m_config;
 };
