@@ -1429,6 +1429,7 @@ copy "$(OutDir)$(TargetName)$(TargetExt)" c:\uvnc\64\xp</Command>
     <ClCompile Include="vncWindowSession.cpp" />
     <ClCompile Include="vncAudioStreamer.cpp" />
     <ClCompile Include="vncNvencEncoder.cpp" />
+    <ClCompile Include="vncMfH264Encoder.cpp" />
     <ClCompile Include="vncVideoCapture.cpp" />
     <ClCompile Include="vncVideoStreamer.cpp" />
     <ClCompile Include="vncExtChannel.cpp" />
@@ -3270,6 +3271,7 @@ copy "$(OutDir)$(TargetName)$(TargetExt)" c:\uvnc\64\xp</Command>
     <ClInclude Include="vncWindowSession.h" />
     <ClInclude Include="vncAudioStreamer.h" />
     <ClInclude Include="vncNvencEncoder.h" />
+    <ClInclude Include="vncMfH264Encoder.h" />
     <ClInclude Include="vncVideoCapture.h" />
     <ClInclude Include="vncVideoStreamer.h" />
     <ClInclude Include="vncExtChannel.h" />

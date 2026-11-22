@@ -9,7 +9,7 @@
 
 // Video mode, server side (docs/design.md section 3): one thread per
 // client captures the monitor the viewer looks at with DXGI Desktop
-// Duplication, encodes it with NVENC and sends the frames on extension
+// Duplication, encodes it in hardware and sends the frames on extension
 // channel 4. When the network falls behind, frames are skipped before
 // encoding (never after), so the stream never breaks.
 
@@ -54,7 +54,7 @@ public:
 	vncVideoStreamer(const vncVideoStreamer&) = delete;
 	vncVideoStreamer& operator=(const vncVideoStreamer&) = delete;
 
-	// NVENC usable and an NVIDIA GPU present. Cached after the first call.
+	// A hardware encoder is available. Cached after the first call.
 	static bool IsSupported(std::string* why);
 
 	// A complete message on channel kChVideo (transport reader thread).

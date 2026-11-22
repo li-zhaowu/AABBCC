@@ -34,8 +34,7 @@ public:
 	vncVideoCapture& operator=(const vncVideoCapture&) = delete;
 
 	// Duplicate the monitor that overlaps `screenArea` (screen coordinates)
-	// the most. The monitor must be driven by an NVIDIA adapter, because the
-	// encoder works on the same D3D11 device. Call again after Lost.
+	// the most. The encoder works on the same D3D11 device. Call again after Lost.
 	bool Init(const RECT& screenArea, std::string& error);
 	void Release();
 
@@ -44,6 +43,7 @@ public:
 	Result Acquire(UINT timeoutMs);
 
 	ID3D11Device* Device() const { return m_device; }
+	bool IsIntel() const { return m_isIntel; }
 	ID3D11DeviceContext* Context() const { return m_context; }
 	ID3D11Texture2D* Texture() const { return m_frame; }
 	bool HasPicture() const { return m_hasPicture; }
@@ -64,6 +64,7 @@ private:
 	bool AttachToInputDesktop();
 
 	ID3D11Device* m_device = nullptr;
+	bool m_isIntel = false;
 	ID3D11DeviceContext* m_context = nullptr;
 	IDXGIOutputDuplication* m_dup = nullptr;
 	ID3D11Texture2D* m_frame = nullptr;   // our copy of the last picture

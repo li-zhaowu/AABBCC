@@ -133,9 +133,9 @@ T = {
     'UltraVNC Viewer - File transfer': ('UltraVNC 查看器 - 文件传输', 'UltraVNC 檢視器 - 檔案傳輸'),
     'This server does not support file transfer.': ('这个服务端不支持文件传输。', '這個伺服端不支援檔案傳輸。'),
     # video mode
-    'The server does not offer video mode.\n\nVideo mode needs the new UltraVNC server on a machine with an NVIDIA GPU and a current NVIDIA driver (see the server log for details).':
-        ('服务端不提供视频模式。\n\n视频模式需要新版 UltraVNC 服务端，并且那台机器要有 NVIDIA 显卡和较新的 NVIDIA 驱动（详情见服务端日志）。',
-         '伺服端不提供視訊模式。\n\n視訊模式需要新版 UltraVNC 伺服端，並且那台機器要有 NVIDIA 顯示卡和較新的 NVIDIA 驅動程式（詳情見伺服端記錄）。'),
+    'The server does not offer video mode.\n\nVideo mode needs an UltraVNC server with a supported hardware video encoder (see the server log for details).':
+        ('服务端不提供视频模式。\n\n视频模式需要支持硬件视频编码的 UltraVNC 服务端（详情见服务端日志）。',
+         '伺服端不提供視訊模式。\n\n視訊模式需要支援硬體視訊編碼的 UltraVNC 伺服端（詳情見伺服端記錄）。'),
     'Video mode needs the "Full colors" (32 bit) pixel format.\n\nChange it in the connection options and try again.':
         ('视频模式需要“全彩色”（32 位）像素格式。\n\n请在连接选项里修改后重试。', '視訊模式需要「全彩」（32 位元）像素格式。\n\n請在連線選項裡修改後重試。'),
     'Video mode does not work with server side scaling.\n\nSet server scaling to 1/1 and try again.':

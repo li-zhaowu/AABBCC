@@ -21,6 +21,7 @@
 namespace {
 
 const UINT kNvidiaVendorId = 0x10DE;
+const UINT kIntelVendorId = 0x8086;
 
 template <class T>
 void SafeRelease(T*& p)
@@ -124,10 +125,9 @@ bool vncVideoCapture::Init(const RECT& screenArea, std::string& error)
 		return false;
 	}
 
-	DXGI_ADAPTER_DESC1 ad;
-	bestAdapter->GetDesc1(&ad);
-	if (ad.VendorId != kNvidiaVendorId) {
-		error = "the monitor is not driven by an NVIDIA GPU";
+	DXGI_ADAPTER_DESC1 ad = {};
+	if (FAILED(bestAdapter->GetDesc1(&ad)) || (ad.VendorId != kNvidiaVendorId && ad.VendorId != kIntelVendorId)) {
+		error = "the monitor is not driven by an NVIDIA or Intel GPU";
 		SafeRelease(bestOutput);
 		SafeRelease(bestAdapter);
 		return false;
@@ -138,7 +138,11 @@ bool vncVideoCapture::Init(const RECT& screenArea, std::string& error)
 	m_outputRect = od.DesktopCoordinates;
 
 	const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
-	hr = D3D11CreateDevice(bestAdapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+	UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+	const bool isIntel = ad.VendorId == kIntelVendorId;
+	if (isIntel)
+		flags |= D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+	hr = D3D11CreateDevice(bestAdapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, flags,
 		levels, ARRAYSIZE(levels), D3D11_SDK_VERSION, &m_device, NULL, &m_context);
 	SafeRelease(bestAdapter);
 	if (FAILED(hr)) {
@@ -200,6 +204,7 @@ bool vncVideoCapture::Init(const RECT& screenArea, std::string& error)
 		return false;
 	}
 	m_hasPicture = false;
+	m_isIntel = isIntel;
 	return true;
 }
 
@@ -209,6 +214,7 @@ void vncVideoCapture::Release()
 	SafeRelease(m_dup);
 	SafeRelease(m_context);
 	SafeRelease(m_device);
+	m_isIntel = false;
 	m_hasPicture = false;
 	// A new duplication reports the current pointer again.
 	m_pointerVisibleKnown = false;

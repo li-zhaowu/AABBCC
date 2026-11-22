@@ -470,8 +470,8 @@ void vncServerExtChannel::OpenForClient()
 		mask |= ChannelBit(kChFiles);
 	}
 
-	// Video mode needs NVENC on an NVIDIA GPU; without it the viewer keeps
-	// the classic mode only (its menu entry reports why).
+	// Without hardware encoding the viewer keeps the classic mode only
+	// (its menu entry reports why).
 	std::string why;
 	if (vncVideoStreamer::IsSupported(&why)) {
 		vncVideoStreamer::Callbacks vc;

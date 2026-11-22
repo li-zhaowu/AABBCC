@@ -9,6 +9,7 @@
 
 #include "vncVideoStreamer.h"
 #include "vncVideoCapture.h"
+#include "vncMfH264Encoder.h"
 #include "vncNvencEncoder.h"
 #include "common/RateController.h"
 
@@ -115,13 +116,14 @@ bool vncVideoStreamer::IsSupported(std::string* why)
 	static bool supported = false;
 	static std::string reason;
 	std::call_once(once, [] {
-		if (!vncNvencEncoder::IsAvailable(&reason))
-			return;
-		if (!vncVideoCapture::HasNvidiaAdapter()) {
-			reason = "no NVIDIA GPU found";
-			return;
+		if (vncVideoCapture::HasNvidiaAdapter())
+			supported = vncNvencEncoder::IsAvailable(&reason);
+		supported = supported || vncMfH264Encoder::IsAvailable();
+		if (!supported) {
+			if (!reason.empty())
+				reason += ". ";
+			reason += "No usable NVIDIA NVENC or Intel H.264 hardware encoder found";
 		}
-		supported = true;
 	});
 	if (!supported && why)
 		*why = reason;
@@ -215,6 +217,8 @@ void vncVideoStreamer::Shutdown()
 
 bool vncVideoStreamer::BeginExternal()
 {
+	if (!vncVideoCapture::HasNvidiaAdapter() || !vncNvencEncoder::IsAvailable(nullptr))
+		return false;
 	Start start;
 	{
 		std::lock_guard<std::mutex> lk(m_mutex);
@@ -273,7 +277,8 @@ void vncVideoStreamer::ThreadMain(Start start)
 	timeBeginPeriod(1); // 1 ms sleep resolution for the frame pacing
 
 	vncVideoCapture capture;
-	vncNvencEncoder encoder;
+	vncNvencEncoder nvenc;
+	vncMfH264Encoder intel;
 	RECT area = {};
 	uint32_t streamId = 0;
 	uint32_t frameNo = 0;
@@ -293,35 +298,38 @@ void vncVideoStreamer::ThreadMain(Start start)
 		failCode = kStatusUnsupported;
 		if (!capture.Init(area, error))
 			return false;
-		if (!encoder.IsOpen() || encoder.Width() != (capture.Width() & ~1) ||
-		    encoder.Height() != (capture.Height() & ~1)) {
-			// Older GPUs have no AV1 / HEVC encoder: fall back.
-			if (!OpenBestCodec(encoder, capture.Device(), capture.Width(), capture.Height(), fps, rate.Current(),
-				    candidates, codec, error, logInfo))
+		if (capture.IsIntel()) {
+			codec = kCodecH264;
+			if (!intel.Open(capture.Device(), capture.Width(), capture.Height(), fps, rate.Current(), error))
 				return false;
+		} else if (!OpenBestCodec(nvenc, capture.Device(), capture.Width(), capture.Height(), fps, rate.Current(),
+				   candidates, codec, error, logInfo)) {
+			return false;
 		}
 		Config cfg;
 		streamId = m_nextStreamId++;
 		cfg.streamId = streamId;
 		cfg.codec = codec;
-		cfg.width = static_cast<uint16_t>(encoder.Width());
-		cfg.height = static_cast<uint16_t>(encoder.Height());
+		cfg.width = static_cast<uint16_t>(capture.Width() & ~1);
+		cfg.height = static_cast<uint16_t>(capture.Height() & ~1);
 		cfg.x = static_cast<int16_t>(capture.OutputRect().left - area.left);
 		cfg.y = static_cast<int16_t>(capture.OutputRect().top - area.top);
 		cfg.fps = static_cast<uint16_t>(fps);
-		cfg.bitrateKbps = encoder.BitrateKbps();
+		cfg.bitrateKbps = rate.Current();
 		m_cb.send(kPrioControl, kConfig, EncodeConfig(cfg));
 		frameNo = 0;
 		forceIdr = true;
 		Log(1, "streaming " + std::to_string(cfg.width) + "x" + std::to_string(cfg.height) + " at " +
-			std::to_string(fps) + " fps, " + std::to_string(cfg.bitrateKbps) + " kbps, " + CodecName(codec));
+			std::to_string(fps) + " fps, " + std::to_string(cfg.bitrateKbps) + " kbps, " + CodecName(codec) +
+			(capture.IsIntel() ? " (Intel hardware)" : " (NVENC)"));
 		return true;
 	};
 
 	// The encoder is bound to the capture device; a new device needs a new
 	// encoder.
 	auto restart = [&]() -> bool {
-		encoder.Close();
+		intel.Close();
+		nvenc.Close();
 		const auto deadline = Clock::now() + kRecoverTimeout;
 		for (;;) {
 			if (setup())
@@ -381,7 +389,8 @@ void vncVideoStreamer::ThreadMain(Start start)
 			bytes = 0;
 		}
 
-		if (rate.Update(now, m_cb.rttMicros ? m_cb.rttMicros() : 0) && encoder.SetBitrate(rate.Target())) {
+		if (rate.Update(now, m_cb.rttMicros ? m_cb.rttMicros() : 0) &&
+		    (capture.IsIntel() ? intel.SetBitrate(rate.Target()) : nvenc.SetBitrate(rate.Target()))) {
 			Log(2, std::string(rate.LastWasCongestion() ? "congestion" : "probing") + ": " +
 				std::to_string(rate.Current()) + " -> " + std::to_string(rate.Target()) + " kbps");
 			rate.Accept();
@@ -422,7 +431,10 @@ void vncVideoStreamer::ThreadMain(Start start)
 		std::vector<uint8_t> bitstream;
 		bool key = false;
 		const uint64_t t = NowUs();
-		if (!encoder.Encode(capture.Texture(), idr, t, bitstream, key, error)) {
+		const bool encoded = capture.IsIntel()
+			? intel.Encode(capture.Texture(), idr, t, bitstream, key, error)
+			: nvenc.Encode(capture.Texture(), idr, t, bitstream, key, error);
+		if (!encoded) {
 			SendStatus(kStatusEncoderError, error);
 			break;
 		}
@@ -441,7 +453,8 @@ void vncVideoStreamer::ThreadMain(Start start)
 		bytes += bitstream.size();
 	}
 
-	encoder.Close();
+	intel.Close();
+	nvenc.Close();
 	capture.Release();
 	timeEndPeriod(1);
 }

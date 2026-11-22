@@ -89,6 +89,7 @@ set(${PROJECT_NAME}_SOURCES
     vncclient.cpp
     vncExtChannel.cpp
     vncNvencEncoder.cpp
+    vncMfH264Encoder.cpp
     vncVideoCapture.cpp
     vncVideoStreamer.cpp
     vncWindowCapture.cpp
